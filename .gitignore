@@ -7,6 +7,10 @@ node_modules/
 .env.production
 .env.development
 
+server/.env
+server/.dev.env
+server/.prod.env
+
 # Firebase credentials - NEVER COMMIT THESE
 **/serviceAccountKey.json
 **/firebase-adminsdk*.json

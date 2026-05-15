@@ -143,6 +143,11 @@ const LandingPage = () => {
     const TOP_COUNTRIES = ['IN', 'AE', 'US', 'GB', 'SG', 'TH', 'MY', 'FR', 'DE', 'AU', 'SA', 'LK', 'JP'];
     const QUICK_CITIES = ['Mumbai', 'Dubai', 'London', 'Singapore', 'Bangkok', 'Goa', 'Paris', 'Jaipur'];
 
+    const POPULAR_DESTINATION_MAP = {
+        'goa': 'Goa,   Goa',
+        'rajasthan': 'Ajmer,   Rajasthan'
+    };
+
     useScrollReveal();
 
     useEffect(() => {
@@ -208,9 +213,10 @@ const LandingPage = () => {
                 setIsSearching(true);
                 try {
                     const searchLower = destination.toLowerCase();
+                    const mappedSearchLower = POPULAR_DESTINATION_MAP[searchLower]?.toLowerCase() || searchLower;
                     
                     const matchedCountryCodes = countriesRef.current
-                        .filter(c => c.Name.toLowerCase().includes(searchLower))
+                        .filter(c => c.Name.toLowerCase().includes(mappedSearchLower))
                         .slice(0, 3)
                         .map(c => c.Code);
 
@@ -225,11 +231,11 @@ const LandingPage = () => {
 
                     for (const code of countriesToSearch) {
                         const countryNameLower = getCountryName(code).toLowerCase();
-                        const isCountryMatch = countryNameLower.includes(searchLower);
+                        const isCountryMatch = countryNameLower.includes(mappedSearchLower);
 
                         if (citiesCacheRef.current[code]) {
                             const filtered = citiesCacheRef.current[code]
-                                .filter(c => c.Name.toLowerCase().includes(searchLower) || isCountryMatch)
+                                .filter(c => c.Name.toLowerCase().includes(mappedSearchLower) || isCountryMatch)
                                 .slice(0, 3)
                                 .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
                             citySuggestions = [...citySuggestions, ...filtered];
@@ -238,7 +244,7 @@ const LandingPage = () => {
                                 if (cityData?.CityList) {
                                     citiesCacheRef.current[code] = cityData.CityList;
                                     const filtered = cityData.CityList
-                                        .filter(c => c.Name.toLowerCase().includes(searchLower) || isCountryMatch)
+                                        .filter(c => c.Name.toLowerCase().includes(mappedSearchLower) || isCountryMatch)
                                         .slice(0, 3)
                                         .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
                                     citySuggestions = [...citySuggestions, ...filtered];
@@ -352,13 +358,15 @@ const LandingPage = () => {
     const handleQuickCitySelect = useCallback(async (cityName) => {
         setDestination(cityName);
         try {
+            const mappedCityName = POPULAR_DESTINATION_MAP[cityName.toLowerCase()] || cityName;
             for (const code of TOP_COUNTRIES) {
                 const cityData = citiesCacheRef.current[code]
                     ? { CityList: citiesCacheRef.current[code] }
                     : await fetchCities(code);
                 if (cityData?.CityList) {
                     citiesCacheRef.current[code] = cityData.CityList;
-                    const match = cityData.CityList.find(c => c.Name.toLowerCase() === cityName.toLowerCase());
+                    const match = cityData.CityList.find(c => c.Name.toLowerCase() === mappedCityName.toLowerCase()) || 
+                                  cityData.CityList.find(c => c.Name.toLowerCase().includes(mappedCityName.toLowerCase()) || mappedCityName.toLowerCase().includes(c.Name.toLowerCase()));
                     if (match) {
                         setSelectedCityCode(match.Code);
                         setSelectedCountryCode(code);

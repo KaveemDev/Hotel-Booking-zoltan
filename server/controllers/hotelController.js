@@ -150,6 +150,20 @@ exports.getCityList = async (req, res) => {
   }
 };
 
+exports.getAllCities = async (req, res) => {
+  try {
+    console.log('Fetching all cities from cache...');
+    const allCities = await mysqlDataService.getAllCities();
+    res.json({ CityList: allCities, source: 'cache' });
+  } catch (error) {
+    console.error('All cities list error:', error.message);
+    res.status(500).json({
+      error: 'Failed to fetch all cities list',
+      message: error.message
+    });
+  }
+};
+
 // Get hotel code list by city code - Firebase first, then TBO API
 exports.getHotelCodeList = async (req, res) => {
   try {

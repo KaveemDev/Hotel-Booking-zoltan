@@ -6,7 +6,7 @@ import {
   getCachedHotelDetails
 } from './staticDataService';
 
-const SERVER_URL = 'https://api.zovotel.com';
+const SERVER_URL = 'http://localhost:5001';
 const API_BASE_URL = `${SERVER_URL}/api/hotels`;
 
 const api = axios.create({
@@ -56,6 +56,19 @@ export const fetchCities = async (countryCode) => {
     return response.data;
   } catch (error) {
     // Silently handle connection errors - will show empty state in UI
+    throw error;
+  }
+};
+
+/**
+ * Fetch all cities across all countries
+ */
+export const fetchAllCities = async () => {
+  try {
+    const response = await api.get('/all-cities');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching all cities:', error);
     throw error;
   }
 };

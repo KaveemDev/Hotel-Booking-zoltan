@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useDispatch as useReduxDispatch, useSelector } from 'react-redux';
 import HeroSearchBar from '../components/HeroSearchBar';
 import FilterSidebar from '../components/FilterSidebar';
 import HotelCard from '../components/HotelCard';
 import ErrorAlert from '../components/ErrorAlert';
-import { searchHotels, fetchHotels, fetchHotelCardInfo } from '../services/api';
+import { searchHotels } from '../services/api';
+import { fetchCityHotelsData, fetchHotelCardInfoData } from '../redux/slices/staticDataSlice';
 import { useAppContext } from '../context/AppContext';
 import { setInternalNavigation } from '../components/DirectAccessGuard';
 
@@ -29,6 +31,8 @@ const parseStarRating = (rating) => {
 
 function HomePage() {
     const { state: appState, dispatch } = useAppContext();
+    const reduxDispatch = useReduxDispatch();
+    const { cityHotels, hotelCardInfo } = useSelector(state => state.staticData);
     const cachedSearch = appState.searchCache;
 
     const [hotels, setHotels] = useState(cachedSearch?.hotels || []);
@@ -293,12 +297,16 @@ function HomePage() {
             // Step 2: Fetch card info (images, amenities, ratings) and enrich in the background
             if (resultHotelCodes.length > 0) {
                 try {
-                    const cardInfoResponse = await fetchHotelCardInfo(resultHotelCodes);
-                    const hotelCardInfo = cardInfoResponse.hotelInfo || {};
-
-                    // Enrich the already-rendered hotels with card info
+                    const payload = await reduxDispatch(fetchHotelCardInfoData(resultHotelCodes)).unwrap();
+                    // We need to use the combined state from Redux, but since it might not be updated in the component closure yet,
+                    // we'll get it directly from the store if possible, or just merge the new payload
+                    const newInfo = payload.newInfo || {};
+                    // Since we can't easily access the full Redux state from this closure without adding it to dependencies (which causes infinite loops),
+                    // we will just enrich with the newInfo we got, or rely on a `useEffect` to do the enrichment.
+                    // Let's enrich with `newInfo` and any existing `hotelCardInfo` from the component closure.
+                    
                     setHotels(prev => prev.map(hotel => {
-                        const cachedInfo = hotelCardInfo[String(hotel.HotelCode)];
+                        const cachedInfo = newInfo[String(hotel.HotelCode)] || hotelCardInfo[String(hotel.HotelCode)];
                         if (!cachedInfo) return hotel;
                         return {
                             ...hotel,
@@ -386,18 +394,17 @@ function HomePage() {
             } else if (searchData.cityCode) {
                 // City search - existing logic
                 try {
-                    const hotelListResponse = await fetchHotels(searchData.cityCode);
-                    if (hotelListResponse && hotelListResponse.Hotels && Array.isArray(hotelListResponse.Hotels)) {
+                    const payload = await reduxDispatch(fetchCityHotelsData(searchData.cityCode)).unwrap();
+                    if (payload && payload.hotels && Array.isArray(payload.hotels)) {
                         // Create a map of HotelCode -> Hotel Details for fast lookup
-                        hotelListResponse.Hotels.forEach(h => {
+                        payload.hotels.forEach(h => {
                             staticMap[h.HotelCode] = h;
                         });
                         setStaticHotelsMap(staticMap);
                         setCurrentStaticMap(staticMap);
 
                         // Extract all hotel codes
-                        hotelCodesList = hotelListResponse.Hotels.map(h => h.HotelCode);
-                        // console.log(`Total hotels for city: ${hotelCodesList.length}`);
+                        hotelCodesList = payload.hotels.map(h => h.HotelCode);
                     }
                 } catch (err) {
                     console.error('Failed to fetch hotel list for city:', err);

@@ -102,6 +102,34 @@ const getCities = async (countryCode) => {
     }
 };
 
+const getAllCities = async () => {
+    try {
+        const mem = memGet('all_cities');
+        if (mem) return mem;
+
+        const [rows] = await db.execute(
+            `SELECT cache_data FROM static_cache WHERE cache_key LIKE 'cities_%'`
+        );
+        let allCities = [];
+        if (rows.length > 0) {
+            for (const row of rows) {
+                const data = typeof row.cache_data === 'string'
+                    ? JSON.parse(row.cache_data) : row.cache_data;
+                if (Array.isArray(data)) {
+                    allCities = allCities.concat(data);
+                }
+            }
+            memSet('all_cities', allCities);
+            console.log(`All cities fetched from MySQL cache (${allCities.length} total)`);
+            return allCities;
+        }
+        return [];
+    } catch (error) {
+        console.error('Error getting all cities from MySQL:', error.message);
+        return [];
+    }
+};
+
 // ─── Hotels (hotel code lists per city) ────────────────────────
 const saveHotels = async (cityCode, data) => {
     try {
@@ -369,7 +397,7 @@ const searchHotelNames = async (query) => {
 
         const searchTerm = `%${query}%`;
         const [rows] = await db.execute(
-            `SELECT hotel_code, hotel_name, address FROM hotels WHERE hotel_name LIKE ? LIMIT 20`,
+            `SELECT hotel_code, hotel_name, address FROM hotels WHERE hotel_name LIKE ? LIMIT 100`,
             [searchTerm]
         );
 
@@ -389,6 +417,7 @@ module.exports = {
     getCountries,
     saveCities,
     getCities,
+    getAllCities,
     saveHotels,
     getHotels,
     saveHotelDetails,

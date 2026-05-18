@@ -14,7 +14,7 @@ import axios from 'axios';
 
 const AuthContext = createContext();
 
-const SERVER_URL = 'http://localhost:5001';
+const SERVER_URL = 'https://api.zovotel.com';
 const API = `${SERVER_URL}/api/users`;
 
 // Admin emails - add your admin email addresses here

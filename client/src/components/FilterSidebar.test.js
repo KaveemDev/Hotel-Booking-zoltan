@@ -5,13 +5,12 @@ import FilterSidebar from './FilterSidebar';
 describe('FilterSidebar', () => {
     const mockFilters = {
         priceRange: { min: 0, max: 1000 },
+        hotelName: '',
         starRating: [],
         guestRating: [],
-        propertyType: [],
         amenities: [],
         mealPlans: [],
         cancellation: [],
-        payment: []
     };
 
     const mockOnFilterChange = jest.fn();
@@ -20,34 +19,39 @@ describe('FilterSidebar', () => {
         jest.clearAllMocks();
     });
 
-    test('renders all filter sections', () => {
+    test('renders current filter sections', () => {
         render(<FilterSidebar filters={mockFilters} onFilterChange={mockOnFilterChange} />);
 
-        expect(screen.getByText('Price per night')).toBeInTheDocument();
+        expect(screen.getByText('Hotel name')).toBeInTheDocument();
+        expect(screen.getByText('Price per night (₹)')).toBeInTheDocument();
         expect(screen.getByText('Star rating')).toBeInTheDocument();
         expect(screen.getByText('Guest rating')).toBeInTheDocument();
-        expect(screen.getByText('Property type')).toBeInTheDocument();
     });
 
-    test('toggles checkbox filters', () => {
-        render(<FilterSidebar filters={mockFilters} onFilterChange={mockOnFilterChange} />);
+    test('updates hotel name filter', () => {
+        render(
+            <FilterSidebar
+                filters={mockFilters}
+                onFilterChange={mockOnFilterChange}
+                filterOptions={{ hotelNames: ['The Oberoi Mumbai', 'Taj Palace Delhi'] }}
+            />
+        );
 
-        const hotelCheckbox = screen.getByLabelText('Hotel');
-        fireEvent.click(hotelCheckbox);
+        fireEvent.change(screen.getByPlaceholderText('Search by hotel name'), {
+            target: { value: 'oberoi' }
+        });
 
         expect(mockOnFilterChange).toHaveBeenCalledWith({
             ...mockFilters,
-            propertyType: ['Hotel']
+            hotelName: 'oberoi'
         });
     });
 
     test('updates price range', () => {
         render(<FilterSidebar filters={mockFilters} onFilterChange={mockOnFilterChange} />);
 
-        // Find the slider input
-        // Note: In a real app, we might need a more specific selector or test id
-        const slider = screen.getByRole('slider');
-        fireEvent.change(slider, { target: { value: '500' } });
+        const sliders = screen.getAllByRole('slider');
+        fireEvent.change(sliders[1], { target: { value: '500' } });
 
         expect(mockOnFilterChange).toHaveBeenCalled();
         const newFilters = mockOnFilterChange.mock.calls[0][0];
@@ -55,28 +59,30 @@ describe('FilterSidebar', () => {
     });
 
     test('clears all filters', () => {
-        render(<FilterSidebar filters={mockFilters} onFilterChange={mockOnFilterChange} />);
+        render(
+            <FilterSidebar
+                filters={{ ...mockFilters, hotelName: 'Taj', starRating: [5] }}
+                onFilterChange={mockOnFilterChange}
+            />
+        );
 
-        const clearButton = screen.getByText('Clear all');
-        fireEvent.click(clearButton);
+        fireEvent.click(screen.getByText('Clear all'));
 
         expect(mockOnFilterChange).toHaveBeenCalledWith(expect.objectContaining({
+            hotelName: '',
             starRating: [],
-            propertyType: []
         }));
     });
 
-    test('collapses and expands sections', () => {
-        render(<FilterSidebar filters={mockFilters} onFilterChange={mockOnFilterChange} />);
+    test('shows matching hotel name suggestions', () => {
+        render(
+            <FilterSidebar
+                filters={{ ...mockFilters, hotelName: 'taj' }}
+                onFilterChange={mockOnFilterChange}
+                filterOptions={{ hotelNames: ['The Oberoi Mumbai', 'Taj Palace Delhi'] }}
+            />
+        );
 
-        // Amenities is closed by default in our implementation
-        // We need to find the toggle. The text is visible, but the content shouldn't be.
-        // Let's check for a known amenity
-        expect(screen.queryByText('Free WiFi')).not.toBeInTheDocument();
-
-        const amenitiesHeader = screen.getByText('Amenities');
-        fireEvent.click(amenitiesHeader);
-
-        expect(screen.getByText('Free WiFi')).toBeInTheDocument();
+        expect(screen.getByText('Taj Palace Delhi')).toBeInTheDocument();
     });
 });

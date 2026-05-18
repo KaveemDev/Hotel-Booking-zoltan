@@ -86,6 +86,7 @@ function HomePage() {
     const filterOptions = useMemo(() => {
         if (hotels.length === 0) return {};
 
+        const hotelNames = new Set();
         const starRatings = {};
         const guestRatings = { '9': 0, '8': 0, '7': 0, '6': 0 };
         const amenities = {};
@@ -93,6 +94,10 @@ function HomePage() {
         const cancellation = { 'Free Cancellation': 0, 'Non-refundable': 0 };
 
         hotels.forEach(hotel => {
+            if (hotel.HotelName) {
+                hotelNames.add(hotel.HotelName);
+            }
+
             // Count star ratings
             const stars = parseStarRating(hotel.StarRating);
             if (stars >= 1 && stars <= 5) {
@@ -140,6 +145,7 @@ function HomePage() {
         });
 
         return {
+            hotelNames: Array.from(hotelNames).sort((a, b) => a.localeCompare(b)),
             starRatings,
             guestRatings,
             amenities,
@@ -173,6 +179,7 @@ function HomePage() {
     // Initialize filters with dynamic price range
     const [filters, setFilters] = useState(cachedSearch?.filters || {
         priceRange: { min: 0, max: 100000 },
+        hotelName: '',
         starRating: [],
         guestRating: [],
         amenities: [],
@@ -341,6 +348,7 @@ function HomePage() {
         // Reset filters on new search
         setFilters({
             priceRange: { min: 0, max: 100000 },
+            hotelName: '',
             starRating: [],
             guestRating: [],
             amenities: [],
@@ -529,6 +537,11 @@ function HomePage() {
     // Apply filters with improved logic
     const filteredHotels = useMemo(() => {
         return hotels.filter(hotel => {
+            if (filters.hotelName?.trim()) {
+                const hotelName = (hotel.HotelName || '').toLowerCase();
+                if (!hotelName.includes(filters.hotelName.trim().toLowerCase())) return false;
+            }
+
             // Price Filter
             const price = hotel.Rooms?.[0]?.RSP || hotel.Rooms?.[0]?.TotalFare || 0;
             if (price < filters.priceRange.min || price > filters.priceRange.max) return false;
@@ -613,7 +626,13 @@ function HomePage() {
 
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-slate-900 theme-transition">
-            <HeroSearchBar onSearch={handleSearch} compact={hasSearched} locationState={location.state} cachedSearchParams={cachedSearch?.searchParams} />
+            <HeroSearchBar
+                onSearch={handleSearch}
+                compact={hasSearched}
+                locationState={location.state}
+                cachedSearchParams={cachedSearch?.searchParams}
+                recentHotels={hotels}
+            />
 
             <div ref={resultsRef} className="container mx-auto px-4 py-8">
                 <div className="flex flex-col lg:flex-row gap-6">

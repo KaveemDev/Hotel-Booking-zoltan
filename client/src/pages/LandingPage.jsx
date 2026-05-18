@@ -278,7 +278,13 @@ const LandingPage = () => {
                     try {
                         const hotelData = await searchHotelNames(destination);
                         if (hotelData?.suggestions) {
-                            hotelSuggestions = hotelData.suggestions.map(h => ({ ...h, type: 'Hotel' }));
+                            hotelSuggestions = hotelData.suggestions.map(h => ({
+                                Code: h.hotelCode,
+                                Name: h.hotelName,
+                                Address: h.address,
+                                CityName: h.cityName || '',
+                                type: 'Hotel'
+                            }));
                         }
                     } catch (e) { }
 

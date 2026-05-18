@@ -391,6 +391,53 @@ const saveHotelNameMapping = async (hotelName, hotelCode, address = '') => {
     }
 };
 
+const saveHotelNameMappingsBulk = async (hotels = []) => {
+    try {
+        if (!Array.isArray(hotels) || hotels.length === 0) return 0;
+
+        const uniqueHotels = [];
+        const seenCodes = new Set();
+
+        for (const hotel of hotels) {
+            const hotelCode = hotel?.HotelCode || hotel?.hotelCode;
+            const hotelName = hotel?.HotelName || hotel?.hotelName;
+
+            if (!hotelCode || !hotelName || seenCodes.has(String(hotelCode))) continue;
+
+            seenCodes.add(String(hotelCode));
+            uniqueHotels.push({
+                hotelCode: String(hotelCode),
+                hotelName,
+                address: hotel?.Address || hotel?.HotelAddress || hotel?.address || ''
+            });
+        }
+
+        if (uniqueHotels.length === 0) return 0;
+
+        const placeholders = uniqueHotels.map(() => '(?, ?, ?)').join(', ');
+        const values = uniqueHotels.flatMap(hotel => [
+            hotel.hotelCode,
+            hotel.hotelName,
+            hotel.address || null
+        ]);
+
+        const query = `
+            INSERT INTO hotels (hotel_code, hotel_name, address)
+            VALUES ${placeholders}
+            ON DUPLICATE KEY UPDATE
+            hotel_name = COALESCE(VALUES(hotel_name), hotel_name),
+            address = COALESCE(VALUES(address), address),
+            last_updated = NOW()
+        `;
+
+        await db.execute(query, values);
+        return uniqueHotels.length;
+    } catch (error) {
+        console.error('Error saving hotel name mappings in bulk:', error.message);
+        return 0;
+    }
+};
+
 const searchHotelNames = async (query) => {
     try {
         if (!query || query.length < 2) return [];
@@ -430,5 +477,6 @@ module.exports = {
     getHotelCardInfoBatch,
     getMissingHotelCardInfoCodes,
     saveHotelNameMapping,
+    saveHotelNameMappingsBulk,
     searchHotelNames
 };

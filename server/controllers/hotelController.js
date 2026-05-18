@@ -178,6 +178,15 @@ exports.getHotelCodeList = async (req, res) => {
     // Check cache first
     const cachedHotels = await mysqlDataService.getHotels(cityCode);
     if (cachedHotels) {
+      try {
+        const savedCount = await mysqlDataService.saveHotelNameMappingsBulk(cachedHotels);
+        if (savedCount > 0) {
+          console.log(`Backfilled ${savedCount} hotel names into searchable DB for cached city ${cityCode}`);
+        }
+      } catch (mappingError) {
+        console.error(`Failed to backfill cached hotel names for city ${cityCode}:`, mappingError.message);
+      }
+
       console.log(`Returning ${cachedHotels.length} hotels from cache`);
       return res.json({ Hotels: cachedHotels, source: 'cache' });
     }
@@ -193,6 +202,13 @@ exports.getHotelCodeList = async (req, res) => {
     // Save to cache
     if (response.data.Hotels && response.data.Hotels.length > 0) {
       await mysqlDataService.saveHotels(cityCode, response.data.Hotels);
+
+      try {
+        const savedCount = await mysqlDataService.saveHotelNameMappingsBulk(response.data.Hotels);
+        console.log(`Saved ${savedCount} hotel names into searchable DB for city ${cityCode}`);
+      } catch (mappingError) {
+        console.error(`Failed to save hotel name mappings for city ${cityCode}:`, mappingError.message);
+      }
     }
 
     console.log(`Hotels fetched: ${response.data.Hotels?.length || 0} hotels`);

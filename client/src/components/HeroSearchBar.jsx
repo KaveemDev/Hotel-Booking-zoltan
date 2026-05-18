@@ -15,7 +15,7 @@ const POPULAR_DESTINATION_MAP = {
   'rajasthan': 'Ajmer,   Rajasthan'
 };
 
-const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchParams }) => {
+const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchParams, recentHotels = [] }) => {
   const hasAutoSearched = useRef(false);
   const [destination, setDestination] = useState('');
   const [selectedCityCode, setSelectedCityCode] = useState(null);
@@ -258,6 +258,25 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
           });
           citySuggestions = citySuggestions.slice(0, 8);
 
+          // Hotels from the currently loaded search results should show up immediately,
+          // even if the background DB autocomplete save is still catching up.
+          const recentHotelSuggestions = Array.from(
+            new Map(
+              recentHotels
+                .filter(hotel => (hotel.HotelName || '').toLowerCase().includes(searchLower))
+                .map(hotel => [String(hotel.HotelCode), {
+                  Code: hotel.HotelCode,
+                  Name: hotel.HotelName,
+                  Address: hotel.HotelAddress || hotel.Address || '',
+                  CityName: hotel.CityName || '',
+                  StarRating: hotel.StarRating || hotel.HotelRating || '',
+                  Latitude: hotel.Latitude || '',
+                  Longitude: hotel.Longitude || '',
+                  type: 'Hotel'
+                }])
+            ).values()
+          ).slice(0, 8);
+
           // Hotels: fetch to cache via Redux, then filter locally
           const prefix = destination.substring(0, 2).toLowerCase();
           let cachedHotels = hotelCache[prefix];
@@ -274,7 +293,11 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
              ).map(h => ({ Code: h.hotelCode, Name: h.hotelName, Address: h.address, type: 'Hotel' })).slice(0, 8);
           }
 
-          const combined = [...citySuggestions, ...hotelSuggestions];
+          const combined = [
+            ...citySuggestions,
+            ...recentHotelSuggestions,
+            ...hotelSuggestions.filter(hotel => !recentHotelSuggestions.some(recent => String(recent.Code) === String(hotel.Code)))
+          ];
           setSuggestions(combined);
           setShowDropdown(true);
 
@@ -302,7 +325,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
         if (searchTimeoutRef.current) {
             clearTimeout(searchTimeoutRef.current);
     }};
-  }, [destination, getCountryName]);
+  }, [destination, getCountryName, dispatch, hotelCache, cities, recentHotels]);
 
   const handleGuestChange = (type, operation) => {
     setGuests(prev => {

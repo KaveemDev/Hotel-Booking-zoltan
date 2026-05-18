@@ -6,7 +6,7 @@ import {
   getCachedHotelDetails
 } from './staticDataService';
 
-const SERVER_URL = 'http://localhost:5001';
+const SERVER_URL = 'https://api.zovotel.com';
 const API_BASE_URL = `${SERVER_URL}/api/hotels`;
 
 const api = axios.create({

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Star, X, Filter, MapPin } from 'lucide-react';
+import { ChevronDown, Star, X, Filter, MapPin } from 'lucide-react';
 
 const FilterSection = ({ title, children, isOpen, onToggle }) => (
     <div className="border-b border-gray-200 dark:border-slate-700 py-4">
@@ -12,7 +12,7 @@ const FilterSection = ({ title, children, isOpen, onToggle }) => (
                 <ChevronDown className="w-4 h-4 text-gray-500 dark:text-slate-400 group-hover:text-blue-500 transition-colors" />
             </div>
         </div>
-        <div className={`overflow-hidden transition-all duration-300 ease-out ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
+        <div className={`overflow-hidden p-1 transition-all duration-300 ease-out ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`} >
             <div className="mt-2 space-y-2">
                 {children}
             </div>
@@ -49,6 +49,7 @@ const FilterSidebar = ({
     priceBounds = { min: 0, max: 100000 }
 }) => {
     const [openSections, setOpenSections] = useState({
+        hotelName: true,
         price: true,
         starRating: true,
         guestRating: true,
@@ -105,6 +106,7 @@ const FilterSidebar = ({
     const clearAll = () => {
         onFilterChange({
             priceRange: { min: priceBounds.min, max: priceBounds.max },
+            hotelName: '',
             starRating: [],
             guestRating: [],
             amenities: [],
@@ -115,10 +117,12 @@ const FilterSidebar = ({
 
     const activeFilterCount = Object.entries(filters).reduce((acc, [key, value]) => {
         if (key === 'priceRange') return acc;
+        if (key === 'hotelName') return acc + (value?.trim() ? 1 : 0);
         return acc + (Array.isArray(value) ? value.length : 0);
     }, 0);
 
     // Get dynamic options from props or use defaults
+    const hotelNameOptions = filterOptions.hotelNames || [];
     const starRatingOptions = filterOptions.starRatings || {};
     const guestRatingOptions = filterOptions.guestRatings || {};
     const amenityOptions = filterOptions.amenities || {};
@@ -180,6 +184,40 @@ const FilterSidebar = ({
                         </div>
 
                         <div className="p-4">
+                            <FilterSection
+                                title="Hotel name"
+                                isOpen={openSections.hotelName}
+                                onToggle={() => toggleSection('hotelName')}
+                            >
+                                <div className="space-y-3">
+                                    <input
+                                        type="text"
+                                        value={filters.hotelName || ''}
+                                        onChange={(e) => onFilterChange({ ...filters, hotelName: e.target.value })}
+                                        placeholder="Search by hotel name"
+                                        className="w-full rounded-lg border border-gray-300 dark:border-slate-600 px-3 py-2 text-sm text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+
+                                    {filters.hotelName?.trim() && hotelNameOptions.length > 0 && (
+                                        <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60">
+                                            {hotelNameOptions
+                                                .filter(name => name.toLowerCase().includes(filters.hotelName.toLowerCase()))
+                                                .slice(0, 8)
+                                                .map(name => (
+                                                    <button
+                                                        key={name}
+                                                        type="button"
+                                                        onClick={() => onFilterChange({ ...filters, hotelName: name })}
+                                                        className="block w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                                                    >
+                                                        {name}
+                                                    </button>
+                                                ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </FilterSection>
+
                             {/* Price Range */}
                             <FilterSection
                                 title="Price per night (₹)"

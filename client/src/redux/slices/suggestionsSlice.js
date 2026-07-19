@@ -1,5 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { fetchAllCities, fetchCountries, searchHotelNames } from '../../services/api';
+import { fetchAllCities, fetchCountries, fetchCities, searchHotelNames } from '../../services/api';
+
+const TOP_COUNTRIES = ['IN', 'AE', 'US', 'GB', 'SG', 'TH', 'MY', 'FR', 'DE', 'AU', 'SA', 'LK', 'JP'];
 
 export const fetchInitialData = createAsyncThunk(
   'suggestions/fetchInitialData',
@@ -22,7 +24,6 @@ export const fetchInitialData = createAsyncThunk(
     let cities = [];
     if (citiesData && citiesData.CityList) {
       cities = citiesData.CityList;
-      // Map country names to cities for easier display
       const countryMap = countries.reduce((acc, country) => {
         acc[country.Code] = country.Name;
         return acc;
@@ -35,30 +36,65 @@ export const fetchInitialData = createAsyncThunk(
       }));
     }
 
-    return { countries, cities };
+    // Also fetch TOP_COUNTRIES cities in parallel to guarantee complete city data across popular destinations
+    const fetchPromises = TOP_COUNTRIES.map(async (code) => {
+      try {
+        const cityData = await fetchCities(code);
+        if (cityData?.CityList) {
+          const countryName = countries.find(c => c.Code === code)?.Name || code;
+          return cityData.CityList.map(city => ({
+            ...city,
+            type: 'City',
+            countryName: countryName,
+            CountryCode: code
+          }));
+        }
+      } catch (e) {
+        // ignore individual country fetch errors
+      }
+      return [];
+    });
+
+    const extraCityArrays = await Promise.all(fetchPromises);
+    const allExtraCities = extraCityArrays.flat();
+
+    // Merge and deduplicate by Code
+    const seenCodes = new Set();
+    const mergedCities = [];
+    for (const city of [...cities, ...allExtraCities]) {
+      if (city && city.Code && !seenCodes.has(city.Code)) {
+        seenCodes.add(city.Code);
+        mergedCities.push(city);
+      }
+    }
+
+    return { countries, cities: mergedCities };
   }
 );
 
 export const fetchHotelSuggestions = createAsyncThunk(
   'suggestions/fetchHotelSuggestions',
   async (query, { getState }) => {
-    if (!query || query.length < 2) return { query, suggestions: [] };
+    if (!query || query.length < 2) return { query, prefix: query, suggestions: [] };
     
-    // We cache by the first 2 characters to get a large pool, then filter locally
     const prefix = query.substring(0, 2).toLowerCase();
+    const exactKey = query.toLowerCase();
     
     const state = getState().suggestions;
-    if (state.hotelCache[prefix]) {
+    if (state.hotelCache[exactKey]) {
+      return { prefix: exactKey, query, suggestions: state.hotelCache[exactKey], cached: true };
+    }
+    if (query.length === 2 && state.hotelCache[prefix]) {
       return { prefix, query, suggestions: state.hotelCache[prefix], cached: true };
     }
 
-    const hotelData = await searchHotelNames(prefix);
+    const hotelData = await searchHotelNames(query);
     let suggestions = [];
     if (hotelData && hotelData.suggestions) {
       suggestions = hotelData.suggestions.map(h => ({ ...h, type: 'Hotel' }));
     }
 
-    return { prefix, query, suggestions, cached: false };
+    return { prefix: exactKey, query, suggestions, cached: false };
   }
 );
 

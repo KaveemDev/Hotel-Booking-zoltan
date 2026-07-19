@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { Search, User, MapPin, Minus, Plus, ChevronDown, Building, X, Sparkles } from 'lucide-react';
 import DateRangePicker from './DateRangePicker';
 import { fetchInitialData, fetchHotelSuggestions } from '../redux/slices/suggestionsSlice';
+import { fetchCities, searchHotelNames } from '../services/api';
 
 // Top countries to search cities from (pre-cached for fast suggestions)
 const TOP_COUNTRIES = ['IN', 'AE', 'US', 'GB', 'SG', 'TH', 'MY', 'FR', 'DE', 'AU', 'SA', 'LK', 'JP'];
@@ -17,6 +18,8 @@ const POPULAR_DESTINATION_MAP = {
 
 const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchParams, recentHotels = [] }) => {
   const hasAutoSearched = useRef(false);
+  const countriesRef = useRef([]);
+  const citiesCacheRef = useRef({});
   const [destination, setDestination] = useState('');
   const [selectedCityCode, setSelectedCityCode] = useState(null);
   const [selectedCountryCode, setSelectedCountryCode] = useState(null);
@@ -58,6 +61,12 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
   useEffect(() => {
     dispatch(fetchInitialData());
   }, [dispatch]);
+
+  useEffect(() => {
+    if (countries && countries.length > 0) {
+      countriesRef.current = countries;
+    }
+  }, [countries]);
 
   // Focus overlay input when opened
   useEffect(() => {
@@ -116,17 +125,23 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
       if (locationState.cityCode) {
         setSelectedCityCode(locationState.cityCode);
       }
+      if (locationState.hotelCode) {
+        setSelectedHotelCode(locationState.hotelCode);
+      }
+      if (locationState.hotelInfo) {
+        setSelectedHotelInfo(locationState.hotelInfo);
+      }
 
-      // Auto-search: look up city code across countries and trigger search
+      // Auto-search: look up city code/hotel code across countries/API and trigger search
       if (dest && onSearch) {
-        hasAutoSearched.current = true;
         const autoSearch = async () => {
           try {
-            // If cityCode was passed from landing page, use it directly
-            if (locationState.cityCode) {
+            // If cityCode or hotelCode was passed from landing page, use it directly
+            if (locationState.cityCode || locationState.hotelCode) {
+              hasAutoSearched.current = true;
               onSearch({
                 destination: dest,
-                cityCode: locationState.cityCode,
+                cityCode: locationState.cityCode || null,
                 countryCode: locationState.countryCode || 'IN',
                 hotelCode: locationState.hotelCode || null,
                 hotelInfo: locationState.hotelInfo || null,
@@ -141,37 +156,94 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
               return;
             }
 
-            // Otherwise search across countries to find the city
             // Otherwise search across cities to find the city
-            if (cities && cities.length > 0) {
-              const mappedDest = POPULAR_DESTINATION_MAP[dest.toLowerCase()] || dest;
-              const match = cities.find(
-                c => c.Name.toLowerCase() === mappedDest.toLowerCase()
-              ) || cities.find(
-                c => c.Name.toLowerCase().includes(mappedDest.toLowerCase()) || mappedDest.toLowerCase().includes(c.Name.toLowerCase())
-              );
-              if (match) {
-                const fullDestName = match.countryName ? `${match.Name}, ${match.countryName}` : match.Name;
-                setDestination(fullDestName);
-                setSelectedCityCode(match.Code);
-                setSelectedCountryCode(match.CountryCode || 'IN');
-                onSearch({
-                  destination: fullDestName,
-                  cityCode: match.Code,
-                  countryCode: match.CountryCode || 'IN',
-                  hotelCode: null,
-                  hotelInfo: null,
-                  checkInDate: locationState.checkIn || checkInDate,
-                  checkOutDate: locationState.checkOut || checkOutDate,
-                  guests: typeof locationState.guests === 'number'
-                    ? { rooms: 1, adults: locationState.guests, children: 0, childrenAges: [] }
-                    : typeof locationState.guests === 'object'
-                      ? locationState.guests
-                      : guests
-                });
-                return;
+            const mappedDest = POPULAR_DESTINATION_MAP[dest.toLowerCase()] || dest;
+            let match = (cities || []).find(
+              c => c.Name.toLowerCase() === mappedDest.toLowerCase()
+            ) || (cities || []).find(
+              c => c.Name.toLowerCase().includes(mappedDest.toLowerCase()) || mappedDest.toLowerCase().includes(c.Name.toLowerCase())
+            );
+
+            // If not found in cities right away, try checking TOP_COUNTRIES or API
+            if (!match && (!cities || cities.length === 0)) {
+              // Redux cities might still be loading, exit without marking hasAutoSearched so it runs when cities update
+              return;
+            }
+
+            if (!match) {
+              for (const code of TOP_COUNTRIES) {
+                const cityData = citiesCacheRef.current[code]
+                  ? { CityList: citiesCacheRef.current[code] }
+                  : await fetchCities(code);
+                if (cityData?.CityList) {
+                  citiesCacheRef.current[code] = cityData.CityList;
+                  const m = cityData.CityList.find(c => c.Name.toLowerCase() === mappedDest.toLowerCase()) ||
+                            cityData.CityList.find(c => c.Name.toLowerCase().includes(mappedDest.toLowerCase()) || mappedDest.toLowerCase().includes(c.Name.toLowerCase()));
+                  if (m) {
+                    match = { ...m, countryName: getCountryName(code), CountryCode: code };
+                    break;
+                  }
+                }
               }
             }
+
+            if (match) {
+              hasAutoSearched.current = true;
+              const fullDestName = match.countryName ? `${match.Name}, ${match.countryName}` : match.Name;
+              setDestination(fullDestName);
+              setSelectedCityCode(match.Code);
+              setSelectedCountryCode(match.CountryCode || match.countryCode || 'IN');
+              onSearch({
+                destination: fullDestName,
+                cityCode: match.Code,
+                countryCode: match.CountryCode || match.countryCode || 'IN',
+                hotelCode: null,
+                hotelInfo: null,
+                checkInDate: locationState.checkIn || checkInDate,
+                checkOutDate: locationState.checkOut || checkOutDate,
+                guests: typeof locationState.guests === 'number'
+                  ? { rooms: 1, adults: locationState.guests, children: 0, childrenAges: [] }
+                  : typeof locationState.guests === 'object'
+                    ? locationState.guests
+                    : guests
+              });
+              return;
+            }
+
+            // If not found as a city, check as a hotel
+            const hotelData = await searchHotelNames(dest);
+            if (hotelData?.suggestions && hotelData.suggestions.length > 0) {
+              hasAutoSearched.current = true;
+              const topHotel = hotelData.suggestions[0];
+              const hInfo = {
+                HotelCode: topHotel.hotelCode,
+                HotelName: topHotel.hotelName,
+                HotelAddress: topHotel.address || topHotel.cityName || '',
+                CityName: topHotel.cityName || '',
+                StarRating: topHotel.StarRating || '',
+                Latitude: topHotel.Latitude || '',
+                Longitude: topHotel.Longitude || ''
+              };
+              setSelectedHotelCode(topHotel.hotelCode);
+              setSelectedHotelInfo(hInfo);
+              onSearch({
+                destination: topHotel.hotelName,
+                cityCode: null,
+                countryCode: 'IN',
+                hotelCode: topHotel.hotelCode,
+                hotelInfo: hInfo,
+                checkInDate: locationState.checkIn || checkInDate,
+                checkOutDate: locationState.checkOut || checkOutDate,
+                guests: typeof locationState.guests === 'number'
+                  ? { rooms: 1, adults: locationState.guests, children: 0, childrenAges: [] }
+                  : typeof locationState.guests === 'object'
+                    ? locationState.guests
+                    : guests
+              });
+              return;
+            }
+
+            hasAutoSearched.current = true;
           } catch (err) {
             console.error('Auto-search failed:', err);
           }
@@ -179,7 +251,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
         autoSearch();
       }
     }
-  }, [locationState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [locationState, cities]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore search bar fields from cached search params (back-navigation)
   useEffect(() => {
@@ -232,11 +304,51 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
           const searchLower = destination.toLowerCase();
           const mappedSearchLower = POPULAR_DESTINATION_MAP[searchLower]?.toLowerCase() || searchLower;
 
-          // Filter Redux cities locally
-          let citySuggestions = cities.filter(c => 
+          const matchedCountryCodes = (countriesRef.current.length > 0 ? countriesRef.current : countries)
+            .filter(c => c.Name.toLowerCase().includes(mappedSearchLower))
+            .slice(0, 3)
+            .map(c => c.Code);
+
+          const countriesToSearch = Array.from(new Set([
+            ...Object.keys(citiesCacheRef.current),
+            ...TOP_COUNTRIES,
+            ...matchedCountryCodes
+          ]));
+
+          let citySuggestions = (cities || []).filter(c => 
             c.Name.toLowerCase().includes(mappedSearchLower) || 
             (c.countryName && c.countryName.toLowerCase().includes(mappedSearchLower))
           );
+
+          const fetchPromises = [];
+          for (const code of countriesToSearch) {
+            const countryNameLower = getCountryName(code).toLowerCase();
+            const isCountryMatch = countryNameLower.includes(mappedSearchLower);
+
+            if (citiesCacheRef.current[code]) {
+              const filtered = citiesCacheRef.current[code]
+                .filter(c => c.Name.toLowerCase().includes(mappedSearchLower) || isCountryMatch)
+                .slice(0, 3)
+                .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
+              citySuggestions = [...citySuggestions, ...filtered];
+            } else if (isCountryMatch || TOP_COUNTRIES.includes(code)) {
+              const promise = fetchCities(code).then(cityData => {
+                if (cityData?.CityList) {
+                  citiesCacheRef.current[code] = cityData.CityList;
+                  const filtered = cityData.CityList
+                    .filter(c => c.Name.toLowerCase().includes(mappedSearchLower) || isCountryMatch)
+                    .slice(0, 3)
+                    .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
+                  citySuggestions = [...citySuggestions, ...filtered];
+                }
+              }).catch(() => {});
+              fetchPromises.push(promise);
+            }
+          }
+
+          if (fetchPromises.length > 0) {
+            await Promise.all(fetchPromises);
+          }
 
           // Deduplicate by city code and limit
           const seenCodes = new Set();
@@ -277,20 +389,31 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
             ).values()
           ).slice(0, 8);
 
-          // Hotels: fetch to cache via Redux, then filter locally
-          const prefix = destination.substring(0, 2).toLowerCase();
-          let cachedHotels = hotelCache[prefix];
-          
-          if (!cachedHotels) {
-             const result = await dispatch(fetchHotelSuggestions(prefix)).unwrap();
-             cachedHotels = result.suggestions;
-          }
-          
           let hotelSuggestions = [];
-          if (cachedHotels) {
-             hotelSuggestions = cachedHotels.filter(h => 
-               h.hotelName.toLowerCase().includes(searchLower)
-             ).map(h => ({ Code: h.hotelCode, Name: h.hotelName, Address: h.address, type: 'Hotel' })).slice(0, 8);
+          try {
+            const exactKey = destination.toLowerCase();
+            let cachedHotels = hotelCache[exactKey] || hotelCache[destination.substring(0, 2).toLowerCase()];
+            if (!cachedHotels || destination.length > 2) {
+               const result = await dispatch(fetchHotelSuggestions(destination)).unwrap();
+               cachedHotels = result?.suggestions || cachedHotels;
+            }
+            if (cachedHotels) {
+               hotelSuggestions = cachedHotels.filter(h => 
+                 (h.hotelName && h.hotelName.toLowerCase().includes(searchLower)) ||
+                 (h.Name && h.Name.toLowerCase().includes(searchLower))
+               ).map(h => ({
+                 Code: h.hotelCode || h.Code,
+                 Name: h.hotelName || h.Name,
+                 Address: h.address || h.Address || '',
+                 CityName: h.cityName || h.CityName || '',
+                 StarRating: h.StarRating || '',
+                 Latitude: h.Latitude || '',
+                 Longitude: h.Longitude || '',
+                 type: 'Hotel'
+               })).slice(0, 8);
+            }
+          } catch (e) {
+            console.error('Hotel suggestions fetch error:', e);
           }
 
           const combined = [
@@ -338,49 +461,131 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
       } else if (type === 'adults') {
         newGuests.adults = operation === 'inc' ? Math.min(prev.adults + 1, 8) : Math.max(prev.adults - 1, prev.rooms);
       } else if (type === 'children') {
-        const newCount = operation === 'inc' ? Math.min(prev.children + 1, 4) : Math.max(prev.children - 1, 0);
-        newGuests.children = newCount;
-        if (newCount > prev.childrenAges.length) {
+        if (operation === 'inc' && prev.children < 4) {
+          newGuests.children = prev.children + 1;
           newGuests.childrenAges = [...prev.childrenAges, 5];
-        } else if (newCount < prev.childrenAges.length) {
-          newGuests.childrenAges = prev.childrenAges.slice(0, newCount);
+        } else if (operation === 'dec' && prev.children > 0) {
+          newGuests.children = prev.children - 1;
+          newGuests.childrenAges = prev.childrenAges.slice(0, -1);
         }
       }
       return newGuests;
     });
   };
 
-  const handleSearch = useCallback(() => {
+  const handleChildAgeChange = (index, age) => {
+    setGuests(prev => {
+      const newAges = [...prev.childrenAges];
+      newAges[index] = parseInt(age);
+      return { ...prev, childrenAges: newAges };
+    });
+  };
+
+  const handleSearch = useCallback(async () => {
     setIsSearchOverlayOpen(false);
+    setShowDropdown(false);
+
+    let cityCodeToSearch = selectedCityCode;
+    let countryCodeToSearch = selectedCountryCode;
+    let hotelCodeToSearch = selectedHotelCode;
+    let hotelInfoToSearch = selectedHotelInfo;
+    let destText = destination;
+
+    if (!cityCodeToSearch && !hotelCodeToSearch && destination.trim()) {
+      const searchLower = destination.trim().toLowerCase();
+      const mappedSearch = POPULAR_DESTINATION_MAP[searchLower] || destination.trim();
+      const mappedSearchLower = mappedSearch.toLowerCase();
+
+      let match = (cities || []).find(c => c.Name.toLowerCase() === mappedSearchLower) ||
+                  (cities || []).find(c => c.Name.toLowerCase().includes(mappedSearchLower) || mappedSearchLower.includes(c.Name.toLowerCase()));
+
+      if (match) {
+        cityCodeToSearch = match.Code;
+        countryCodeToSearch = match.CountryCode || match.countryCode || 'IN';
+        destText = match.countryName ? `${match.Name}, ${match.countryName}` : match.Name;
+        setDestination(destText);
+        setSelectedCityCode(cityCodeToSearch);
+        setSelectedCountryCode(countryCodeToSearch);
+      } else {
+        for (const code of TOP_COUNTRIES) {
+          const list = citiesCacheRef.current[code];
+          if (list) {
+            const m = list.find(c => c.Name.toLowerCase() === mappedSearchLower) ||
+                      list.find(c => c.Name.toLowerCase().includes(mappedSearchLower) || mappedSearchLower.includes(c.Name.toLowerCase()));
+            if (m) {
+              cityCodeToSearch = m.Code;
+              countryCodeToSearch = code;
+              destText = getCountryName(code) ? `${m.Name}, ${getCountryName(code)}` : m.Name;
+              setDestination(destText);
+              setSelectedCityCode(cityCodeToSearch);
+              setSelectedCountryCode(countryCodeToSearch);
+              break;
+            }
+          }
+        }
+      }
+
+      if (!cityCodeToSearch) {
+        try {
+          const hotelData = await searchHotelNames(destination.trim());
+          if (hotelData?.suggestions && hotelData.suggestions.length > 0) {
+            const topHotel = hotelData.suggestions[0];
+            hotelCodeToSearch = topHotel.hotelCode;
+            hotelInfoToSearch = {
+              HotelCode: topHotel.hotelCode,
+              HotelName: topHotel.hotelName,
+              HotelAddress: topHotel.address || topHotel.cityName || '',
+              CityName: topHotel.cityName || '',
+              StarRating: topHotel.StarRating || '',
+              Latitude: topHotel.Latitude || '',
+              Longitude: topHotel.Longitude || ''
+            };
+            destText = topHotel.hotelName;
+            setDestination(destText);
+            setSelectedHotelCode(hotelCodeToSearch);
+            setSelectedHotelInfo(hotelInfoToSearch);
+          }
+        } catch (e) {
+          console.error('Auto-resolve hotel lookup failed:', e);
+        }
+      }
+    }
+
     if (onSearch) {
       onSearch({
-        destination,
-        cityCode: selectedCityCode,
-        countryCode: selectedCountryCode,
-        hotelCode: selectedHotelCode,
-        hotelInfo: selectedHotelInfo,
+        destination: destText,
+        cityCode: cityCodeToSearch,
+        countryCode: countryCodeToSearch || 'IN',
+        hotelCode: hotelCodeToSearch,
+        hotelInfo: hotelInfoToSearch,
         checkInDate,
         checkOutDate,
         guests
       });
     }
-  }, [onSearch, destination, selectedCityCode, selectedCountryCode, selectedHotelCode, selectedHotelInfo, checkInDate, checkOutDate, guests]);
+  }, [onSearch, destination, selectedCityCode, selectedCountryCode, selectedHotelCode, selectedHotelInfo, checkInDate, checkOutDate, guests, cities, getCountryName]);
 
   const handleSuggestionSelect = (item) => {
-    setDestination(item.countryName ? `${item.Name}, ${item.countryName}` : item.Name);
+    const newDest = item.countryName ? `${item.Name}, ${item.countryName}` : item.Name;
+    setDestination(newDest);
     setShowDropdown(false);
     setIsSearchOverlayOpen(false);
 
+    let newCityCode = null;
+    let newCountryCode = null;
+    let newHotelCode = null;
+    let newHotelInfo = null;
+
     if (item.type === 'City') {
-      setSelectedCityCode(item.Code);
-      setSelectedCountryCode(item.countryCode || 'IN');
+      newCityCode = item.Code;
+      newCountryCode = item.countryCode || item.CountryCode || 'IN';
+      setSelectedCityCode(newCityCode);
+      setSelectedCountryCode(newCountryCode);
       setSelectedHotelCode(null);
       setSelectedHotelInfo(null);
     } else {
-      setSelectedHotelCode(item.Code);
-      setSelectedCityCode(null);
-      setSelectedCountryCode(null);
-      setSelectedHotelInfo({
+      newHotelCode = item.Code;
+      newHotelInfo = {
         HotelCode: item.Code,
         HotelName: item.Name,
         HotelAddress: item.Address || item.CityName || '',
@@ -388,9 +593,83 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
         StarRating: item.StarRating || '',
         Latitude: item.Latitude || '',
         Longitude: item.Longitude || ''
+      };
+      setSelectedHotelCode(newHotelCode);
+      setSelectedHotelInfo(newHotelInfo);
+      setSelectedCityCode(null);
+      setSelectedCountryCode(null);
+    }
+
+    if (onSearch) {
+      onSearch({
+        destination: newDest,
+        cityCode: newCityCode,
+        countryCode: newCountryCode,
+        hotelCode: newHotelCode,
+        hotelInfo: newHotelInfo,
+        checkInDate,
+        checkOutDate,
+        guests
       });
     }
   };
+
+  const handleQuickCitySelect = useCallback(async (cityName) => {
+    setDestination(cityName);
+    setShowDropdown(false);
+    setIsSearchOverlayOpen(false);
+    try {
+      const mappedCityName = POPULAR_DESTINATION_MAP[cityName.toLowerCase()] || cityName;
+      let match = (cities || []).find(c => c.Name.toLowerCase() === mappedCityName.toLowerCase()) ||
+                  (cities || []).find(c => c.Name.toLowerCase().includes(mappedCityName.toLowerCase()) || mappedCityName.toLowerCase().includes(c.Name.toLowerCase()));
+      
+      let foundCode = match?.Code || null;
+      let foundCountry = match?.CountryCode || match?.countryCode || null;
+
+      if (!foundCode) {
+        for (const code of TOP_COUNTRIES) {
+          const cityData = citiesCacheRef.current[code]
+            ? { CityList: citiesCacheRef.current[code] }
+            : await fetchCities(code);
+          if (cityData?.CityList) {
+            citiesCacheRef.current[code] = cityData.CityList;
+            const m = cityData.CityList.find(c => c.Name.toLowerCase() === mappedCityName.toLowerCase()) ||
+                      cityData.CityList.find(c => c.Name.toLowerCase().includes(mappedCityName.toLowerCase()) || mappedCityName.toLowerCase().includes(c.Name.toLowerCase()));
+            if (m) {
+              foundCode = m.Code;
+              foundCountry = code;
+              match = { ...m, countryName: getCountryName(code) };
+              break;
+            }
+          }
+        }
+      }
+
+      if (foundCode) {
+        const fullDest = match?.countryName ? `${match.Name}, ${match.countryName}` : (match?.Name || cityName);
+        setDestination(fullDest);
+        setSelectedCityCode(foundCode);
+        setSelectedCountryCode(foundCountry || 'IN');
+        setSelectedHotelCode(null);
+        setSelectedHotelInfo(null);
+
+        if (onSearch) {
+          onSearch({
+            destination: fullDest,
+            cityCode: foundCode,
+            countryCode: foundCountry || 'IN',
+            hotelCode: null,
+            hotelInfo: null,
+            checkInDate,
+            checkOutDate,
+            guests
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to look up quick city:', err);
+    }
+  }, [cities, getCountryName, onSearch, checkInDate, checkOutDate, guests]);
 
   return (
     <>
@@ -676,7 +955,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
                         {QUICK_CITIES.map((city) => (
                           <button
                             key={city}
-                            onClick={() => setDestination(city)}
+                            onClick={() => handleQuickCitySelect(city)}
                             className="px-4 py-2 bg-gray-100 hover:bg-blue-100 text-gray-700 hover:text-blue-700 rounded-full text-sm font-medium transition-all duration-200 hover:scale-105"
                           >
                             {city}

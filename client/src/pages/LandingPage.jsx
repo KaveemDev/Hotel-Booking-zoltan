@@ -203,6 +203,90 @@ const LandingPage = () => {
         return country?.Name || code;
     }, []);
 
+    const resolveTopSuggestion = useCallback(async (queryStr) => {
+        if (!queryStr || queryStr.trim().length === 0) return null;
+        const searchLower = queryStr.trim().toLowerCase();
+        const mappedSearchLower = POPULAR_DESTINATION_MAP[searchLower]?.toLowerCase() || searchLower;
+
+        let citySuggestions = [];
+        const matchedCountryCodes = countriesRef.current
+            .filter(c => c.Name.toLowerCase().includes(mappedSearchLower))
+            .slice(0, 3)
+            .map(c => c.Code);
+
+        const countriesToSearch = Array.from(new Set([
+            ...Object.keys(citiesCacheRef.current),
+            ...TOP_COUNTRIES,
+            ...matchedCountryCodes
+        ]));
+
+        const fetchPromises = [];
+        for (const code of countriesToSearch) {
+            const countryNameLower = getCountryName(code).toLowerCase();
+            const isCountryMatch = countryNameLower.includes(mappedSearchLower);
+
+            if (citiesCacheRef.current[code]) {
+                const filtered = citiesCacheRef.current[code]
+                    .filter(c => c.Name.toLowerCase().includes(mappedSearchLower) || isCountryMatch)
+                    .slice(0, 3)
+                    .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
+                citySuggestions = [...citySuggestions, ...filtered];
+            } else if (isCountryMatch || TOP_COUNTRIES.includes(code)) {
+                const promise = fetchCities(code).then(cityData => {
+                    if (cityData?.CityList) {
+                        citiesCacheRef.current[code] = cityData.CityList;
+                        const filtered = cityData.CityList
+                            .filter(c => c.Name.toLowerCase().includes(mappedSearchLower) || isCountryMatch)
+                            .slice(0, 3)
+                            .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
+                        citySuggestions = [...citySuggestions, ...filtered];
+                    }
+                }).catch(() => {});
+                fetchPromises.push(promise);
+            }
+        }
+        if (fetchPromises.length > 0) {
+            await Promise.all(fetchPromises);
+        }
+
+        const seenCodes = new Set();
+        citySuggestions = citySuggestions.filter(c => {
+            if (seenCodes.has(c.Code)) return false;
+            seenCodes.add(c.Code);
+            return true;
+        });
+        citySuggestions.sort((a, b) => {
+            const aName = a.Name.toLowerCase(), bName = b.Name.toLowerCase();
+            if (aName === searchLower && bName !== searchLower) return -1;
+            if (bName === searchLower && aName !== searchLower) return 1;
+            if (aName.startsWith(searchLower) && !bName.startsWith(searchLower)) return -1;
+            if (bName.startsWith(searchLower) && !aName.startsWith(searchLower)) return 1;
+            return 0;
+        });
+        citySuggestions = citySuggestions.slice(0, 8);
+
+        let hotelSuggestions = [];
+        try {
+            const hotelData = await searchHotelNames(queryStr.trim());
+            if (hotelData?.suggestions) {
+                hotelSuggestions = hotelData.suggestions.map(h => ({
+                    Code: h.hotelCode,
+                    Name: h.hotelName,
+                    Address: h.address,
+                    CityName: h.cityName || '',
+                    StarRating: h.StarRating || '',
+                    Latitude: h.Latitude || '',
+                    Longitude: h.Longitude || '',
+                    type: 'Hotel'
+                }));
+            }
+        } catch (e) { }
+
+        const combined = [...citySuggestions, ...hotelSuggestions];
+        return combined.length > 0 ? combined[0] : null;
+    }, [getCountryName]);
+
+
     useEffect(() => {
         const getSuggestions = async () => {
             if (searchTimeoutRef.current) {
@@ -386,11 +470,44 @@ const LandingPage = () => {
         } catch (err) { console.error('Failed to look up city:', err); }
     }, [getCountryName]);
 
-    const handleExplore = useCallback(() => {
+    const handleExplore = useCallback(async () => {
+        let cityCodeToSearch = selectedCityCode;
+        let countryCodeToSearch = selectedCountryCode;
+        let hotelCodeToSearch = selectedHotelCode;
+        let hotelInfoToSearch = selectedHotelInfo;
+        let destText = destination;
+
+        if (!cityCodeToSearch && !hotelCodeToSearch && destination.trim()) {
+            let topSuggestion = suggestions.length > 0 ? suggestions[0] : null;
+            if (!topSuggestion) {
+                topSuggestion = await resolveTopSuggestion(destination.trim());
+            }
+
+            if (topSuggestion) {
+                if (topSuggestion.type === 'City') {
+                    cityCodeToSearch = topSuggestion.Code;
+                    countryCodeToSearch = topSuggestion.countryCode || topSuggestion.CountryCode || 'IN';
+                    destText = topSuggestion.countryName ? `${topSuggestion.Name}, ${topSuggestion.countryName}` : topSuggestion.Name;
+                } else {
+                    hotelCodeToSearch = topSuggestion.Code;
+                    hotelInfoToSearch = {
+                        HotelCode: topSuggestion.Code,
+                        HotelName: topSuggestion.Name,
+                        HotelAddress: topSuggestion.Address || topSuggestion.CityName || '',
+                        CityName: topSuggestion.CityName || '',
+                        StarRating: topSuggestion.StarRating || '',
+                        Latitude: topSuggestion.Latitude || '',
+                        Longitude: topSuggestion.Longitude || ''
+                    };
+                    destText = topSuggestion.Name;
+                }
+            }
+        }
+
         navigate('/search', {
-            state: { destination, cityCode: selectedCityCode, countryCode: selectedCountryCode, hotelCode: selectedHotelCode, hotelInfo: selectedHotelInfo, checkIn, checkOut, guests }
+            state: { destination: destText, cityCode: cityCodeToSearch, countryCode: countryCodeToSearch, hotelCode: hotelCodeToSearch, hotelInfo: hotelInfoToSearch, checkIn, checkOut, guests }
         });
-    }, [navigate, destination, selectedCityCode, selectedCountryCode, selectedHotelCode, selectedHotelInfo, checkIn, checkOut, guests]);
+    }, [navigate, destination, selectedCityCode, selectedCountryCode, selectedHotelCode, selectedHotelInfo, checkIn, checkOut, guests, suggestions, resolveTopSuggestion]);
 
     const features = [
         { icon: <Shield className="w-6 h-6 text-indigo-400" />, bg: 'feature-icon-indigo', title: 'Best Price Guarantee', desc: 'Find a lower price? We\'ll match it and give you an extra 10% off.' },
@@ -735,6 +852,12 @@ const LandingPage = () => {
                                     }
                                     setSelectedCityCode(null); setSelectedCountryCode(null);
                                     setSelectedHotelCode(null); setSelectedHotelInfo(null);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleExplore();
+                                    }
                                 }}
                                 placeholder="Search cities, hotels, destinations..."
                                 className="lp-search-input"

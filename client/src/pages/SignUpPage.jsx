@@ -146,7 +146,9 @@ const SignUpPage = () => {
                 <div className="auth-floating-shape"></div>
 
                 <div className="auth-brand-content">
-                    <img src={logo} alt="Zovotel" className="auth-brand-logo" />
+                    <Link to="/">
+                        <img src={logo} alt="Zovotel" className="auth-brand-logo" />
+                    </Link>
                     <h1 className="auth-brand-title">
                         Start your journey with <span>Zovotel</span>
                     </h1>
@@ -181,9 +183,9 @@ const SignUpPage = () => {
             <div className="auth-form-panel">
                 <div className="auth-card">
                     <div className="auth-header">
-                        <div className="auth-logo">
+                        <Link to="/" className="auth-logo" style={{ textDecoration: 'none' }}>
                             <img style={{ height: '30px' }} src={logo} alt="Zovotel Logo" />
-                        </div>
+                        </Link>
                         <h1 className="auth-title">Create Account</h1>
                         <p className="auth-subtitle">Join Zovotel for exclusive deals and rewards</p>
                     </div>

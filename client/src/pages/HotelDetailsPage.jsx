@@ -504,7 +504,7 @@ const HotelDetailsPage = () => {
                     Back to results
                 </button>
                 <div className="flex items-center text-sm text-gray-500 mb-4 overflow-x-auto whitespace-nowrap">
-                    <span className="cursor-pointer hover:text-blue-600" onClick={() => navigate('/search')}>Home</span>
+                    <span className="cursor-pointer hover:text-blue-600" onClick={() => navigate('/')}>Home</span>
                     <ChevronRight size={16} className="mx-2 flex-shrink-0" />
                     <span className="cursor-pointer hover:text-blue-600">{hotel.CountryName || 'India'}</span>
                     <ChevronRight size={16} className="mx-2 flex-shrink-0" />

@@ -53,7 +53,7 @@ const NavHeader = () => {
 
   return (
     <header className="nav-header theme-transition dark:bg-slate-900 dark:border-slate-700">
-      <Link to="/search" className="nav-logo">
+      <Link to="/" className="nav-logo">
         <img style={{ height: '50px' }} src={logo} alt="Zovotel Logo" />
       </Link>
 

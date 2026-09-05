@@ -537,7 +537,7 @@ const LandingPage = () => {
 
             {/* ══════════════ NAVBAR ══════════════ */}
             <nav className={`landing-nav ${isNavScrolled ? 'scrolled' : ''}`}>
-                <Link to="/search" className="flex items-center gap-2">
+                <Link to="/" className="flex items-center gap-2">
                     <img src={logo} alt="Zovotel" className="h-10" />
                 </Link>
                 <div className="flex items-center gap-4 sm:gap-6">
@@ -785,7 +785,9 @@ const LandingPage = () => {
                 <div className="max-w-6xl mx-auto px-4">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
                         <div>
-                            <img src={logo} alt="Zovotel" className="h-10 mb-4" />
+                            <Link to="/" className="inline-block">
+                                <img src={logo} alt="Zovotel" className="h-10 mb-4" />
+                            </Link>
                             <p className="text-white/40 text-sm leading-relaxed">Your trusted companion for finding the perfect hotel stay, anywhere in the world.</p>
                         </div>
                         <div>

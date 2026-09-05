@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ChevronDown, Star, X, Filter, MapPin } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { ChevronDown, Star, X, Filter, MapPin, Search, Loader2 } from 'lucide-react';
 
 const FilterSection = ({ title, children, isOpen, onToggle }) => (
     <div className="border-b border-gray-200 dark:border-slate-700 py-4">
@@ -46,7 +46,9 @@ const FilterSidebar = ({
     filters,
     onFilterChange,
     filterOptions = {},
-    priceBounds = { min: 0, max: 100000 }
+    priceBounds = { min: 0, max: 100000 },
+    onSearchHotel = null,
+    fetchHotelSuggestions = null
 }) => {
     const [openSections, setOpenSections] = useState({
         hotelName: true,
@@ -59,6 +61,29 @@ const FilterSidebar = ({
     });
 
     const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+    // Hotel name search states
+    const [isDropdownClosed, setIsDropdownClosed] = useState(false);
+    const [apiSuggestions, setApiSuggestions] = useState([]);
+    const [isApiLoading, setIsApiLoading] = useState(false);
+    const searchContainerRef = useRef(null);
+    const debounceTimerRef = useRef(null);
+
+    // Close dropdown on click outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+                setIsDropdownClosed(true);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
+        };
+    }, []);
 
     // Lock page scroll when mobile filter drawer is open
     React.useEffect(() => {
@@ -105,7 +130,7 @@ const FilterSidebar = ({
 
     const clearAll = () => {
         onFilterChange({
-            priceRange: { min: priceBounds.min, max: priceBounds.max },
+            priceRange: { min: 0, max: priceBounds.max },
             hotelName: '',
             starRating: [],
             guestRating: [],
@@ -113,10 +138,84 @@ const FilterSidebar = ({
             mealPlans: [],
             cancellation: [],
         });
+        setApiSuggestions([]);
+        setIsDropdownClosed(true);
+    };
+
+    const handleHotelInputChange = (e) => {
+        const val = e.target.value;
+        onFilterChange({ ...filters, hotelName: val });
+        setIsDropdownClosed(false);
+
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current);
+        }
+
+        const trimmed = val.trim();
+        if (trimmed.length >= 2) {
+            debounceTimerRef.current = setTimeout(async () => {
+                const localMatches = (hotelNameOptions || []).filter(name =>
+                    typeof name === 'string' && name.toLowerCase().includes(trimmed.toLowerCase())
+                );
+                if (localMatches.length < 3 && fetchHotelSuggestions) {
+                    try {
+                        setIsApiLoading(true);
+                        const data = await fetchHotelSuggestions(trimmed);
+                        if (data && Array.isArray(data.suggestions)) {
+                            setApiSuggestions(data.suggestions.filter(s => s.type === 'Hotel' || s.hotelName || s.Name));
+                        }
+                    } catch (err) {
+                        console.error('API hotel search error:', err);
+                    } finally {
+                        setIsApiLoading(false);
+                    }
+                } else {
+                    setApiSuggestions([]);
+                }
+            }, 250);
+        } else {
+            setApiSuggestions([]);
+        }
+    };
+
+    const handleSelectSuggestion = (item) => {
+        const name = typeof item === 'string' ? item : (item.Name || item.hotelName || '');
+        onFilterChange({ ...filters, hotelName: name });
+        setIsDropdownClosed(true);
+        if (onSearchHotel) {
+            onSearchHotel(item);
+        }
+    };
+
+    const handleExecuteSearch = (targetQuery = filters.hotelName) => {
+        setIsDropdownClosed(true);
+        const query = (typeof targetQuery === 'string' ? targetQuery : filters.hotelName || '').trim();
+        if (onSearchHotel) {
+            onSearchHotel(query);
+        }
+    };
+
+    const handleClearHotelName = (e) => {
+        e.stopPropagation();
+        onFilterChange({ ...filters, hotelName: '' });
+        setApiSuggestions([]);
+        setIsDropdownClosed(true);
+    };
+
+    const handleHotelKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleExecuteSearch();
+        } else if (e.key === 'Escape') {
+            setIsDropdownClosed(true);
+        }
     };
 
     const activeFilterCount = Object.entries(filters).reduce((acc, [key, value]) => {
-        if (key === 'priceRange') return acc;
+        if (key === 'priceRange') {
+            const isCustom = (value?.min > 0) || (value?.max && value.max < priceBounds.max);
+            return acc + (isCustom ? 1 : 0);
+        }
         if (key === 'hotelName') return acc + (value?.trim() ? 1 : 0);
         return acc + (Array.isArray(value) ? value.length : 0);
     }, 0);
@@ -133,6 +232,19 @@ const FilterSidebar = ({
     const formatPrice = (price) => {
         return new Intl.NumberFormat('en-IN').format(price);
     };
+
+    // Compute suggestions from local options and API search
+    const localMatches = (hotelNameOptions || [])
+        .filter(name => typeof name === 'string' && name.toLowerCase().includes((filters.hotelName || '').toLowerCase()))
+        .slice(0, 8);
+
+    const displaySuggestions = [...localMatches];
+    apiSuggestions.forEach(apiItem => {
+        const apiName = typeof apiItem === 'string' ? apiItem : (apiItem.Name || apiItem.hotelName);
+        if (apiName && !displaySuggestions.some(d => (typeof d === 'string' ? d : (d.Name || d.hotelName || '')).toLowerCase() === apiName.toLowerCase())) {
+            displaySuggestions.push(apiItem);
+        }
+    });
 
     return (
         <>
@@ -189,30 +301,75 @@ const FilterSidebar = ({
                                 isOpen={openSections.hotelName}
                                 onToggle={() => toggleSection('hotelName')}
                             >
-                                <div className="space-y-3">
-                                    <input
-                                        type="text"
-                                        value={filters.hotelName || ''}
-                                        onChange={(e) => onFilterChange({ ...filters, hotelName: e.target.value })}
-                                        placeholder="Search by hotel name"
-                                        className="w-full rounded-lg border border-gray-300 dark:border-slate-600 px-3 py-2 text-sm text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
+                                <div className="space-y-2.5" ref={searchContainerRef}>
+                                    <div className="relative flex items-center">
+                                        <Search className="w-4 h-4 text-gray-400 dark:text-slate-400 absolute left-3 pointer-events-none" />
+                                        <input
+                                            type="text"
+                                            value={filters.hotelName || ''}
+                                            onChange={handleHotelInputChange}
+                                            onFocus={() => {
+                                                if (filters.hotelName?.trim()) {
+                                                    setIsDropdownClosed(false);
+                                                }
+                                            }}
+                                            onKeyDown={handleHotelKeyDown}
+                                            placeholder="Search by hotel name"
+                                            className="w-full rounded-lg border border-gray-300 dark:border-slate-600 pl-9 pr-8 py-2 text-sm text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                        />
+                                        {filters.hotelName && (
+                                            <button
+                                                type="button"
+                                                onClick={handleClearHotelName}
+                                                className="absolute right-2.5 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 transition-colors"
+                                                title="Clear hotel name"
+                                                aria-label="Clear hotel name"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
 
-                                    {filters.hotelName?.trim() && hotelNameOptions.length > 0 && (
-                                        <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800/60">
-                                            {hotelNameOptions
-                                                .filter(name => name.toLowerCase().includes(filters.hotelName.toLowerCase()))
-                                                .slice(0, 8)
-                                                .map(name => (
+                                    {/* Action button: Search Hotels */}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleExecuteSearch()}
+                                        className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-semibold rounded-lg shadow-sm transition-all duration-200"
+                                    >
+                                        {isApiLoading ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                            <Search className="w-3.5 h-3.5" />
+                                        )}
+                                        <span>Search Hotels</span>
+                                    </button>
+
+                                    {/* Dropdown Suggestions */}
+                                    {!isDropdownClosed && filters.hotelName?.trim() && (displaySuggestions.length > 0 || isApiLoading) && (
+                                        <div className="max-h-52 overflow-y-auto rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-md divide-y divide-gray-100 dark:divide-slate-700">
+                                            {isApiLoading && (
+                                                <div className="px-3 py-2 text-xs text-gray-400 flex items-center gap-1.5">
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                    Searching hotels...
+                                                </div>
+                                            )}
+                                            {displaySuggestions.map((item, idx) => {
+                                                const itemName = typeof item === 'string' ? item : (item.Name || item.hotelName);
+                                                const itemSub = typeof item === 'string' ? null : (item.CityName || item.Address);
+                                                return (
                                                     <button
-                                                        key={name}
+                                                        key={typeof item === 'string' ? item : `${item.Code || idx}-${itemName}`}
                                                         type="button"
-                                                        onClick={() => onFilterChange({ ...filters, hotelName: name })}
-                                                        className="block w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                                                        onClick={() => handleSelectSuggestion(item)}
+                                                        className="block w-full px-3 py-2 text-left text-sm text-gray-700 dark:text-slate-200 hover:bg-blue-50 dark:hover:bg-blue-900/40 transition-colors"
                                                     >
-                                                        {name}
+                                                        <div className="font-medium truncate">{itemName}</div>
+                                                        {itemSub && (
+                                                            <div className="text-xs text-gray-400 truncate">{itemSub}</div>
+                                                        )}
                                                     </button>
-                                                ))}
+                                                );
+                                            })}
                                         </div>
                                     )}
                                 </div>

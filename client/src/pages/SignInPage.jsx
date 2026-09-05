@@ -123,7 +123,9 @@ const SignInPage = () => {
                 <div className="auth-floating-shape"></div>
 
                 <div className="auth-brand-content">
-                    <img src={logo} alt="Zovotel" className="auth-brand-logo" />
+                    <Link to="/">
+                        <img src={logo} alt="Zovotel" className="auth-brand-logo" />
+                    </Link>
                     <h1 className="auth-brand-title">
                         Welcome back to <span>Zovotel</span>
                     </h1>
@@ -158,9 +160,9 @@ const SignInPage = () => {
             <div className="auth-form-panel">
                 <div className="auth-card">
                     <div className="auth-header">
-                        <div className="auth-logo">
+                        <Link to="/" className="auth-logo" style={{ textDecoration: 'none' }}>
                             <Hotel />
-                        </div>
+                        </Link>
                         <h1 className="auth-title">Welcome Back</h1>
                         <p className="auth-subtitle">Sign in to access your bookings and exclusive deals</p>
                     </div>

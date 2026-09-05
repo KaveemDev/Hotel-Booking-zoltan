@@ -5,7 +5,7 @@ import HeroSearchBar from '../components/HeroSearchBar';
 import FilterSidebar from '../components/FilterSidebar';
 import HotelCard from '../components/HotelCard';
 import ErrorAlert from '../components/ErrorAlert';
-import { searchHotels } from '../services/api';
+import { searchHotels, searchHotelNames } from '../services/api';
 import { fetchCityHotelsData, fetchHotelCardInfoData } from '../redux/slices/staticDataSlice';
 import { useAppContext } from '../context/AppContext';
 import { setInternalNavigation } from '../components/DirectAccessGuard';
@@ -94,8 +94,9 @@ function HomePage() {
         const cancellation = { 'Free Cancellation': 0, 'Non-refundable': 0 };
 
         hotels.forEach(hotel => {
-            if (hotel.HotelName) {
-                hotelNames.add(hotel.HotelName);
+            const hName = hotel.HotelName || hotel.hotelName || hotel.name;
+            if (hName) {
+                hotelNames.add(hName);
             }
 
             // Count star ratings
@@ -134,6 +135,16 @@ function HomePage() {
             }
         });
 
+        // Also add hotel names from static map (e.g. for city searches where not all chunks loaded)
+        if (staticHotelsMap && Object.keys(staticHotelsMap).length > 0) {
+            Object.values(staticHotelsMap).forEach(h => {
+                const sName = h.HotelName || h.hotelName || h.name;
+                if (sName) {
+                    hotelNames.add(sName);
+                }
+            });
+        }
+
         // Remove zero counts from guest ratings
         Object.keys(guestRatings).forEach(key => {
             if (guestRatings[key] === 0) delete guestRatings[key];
@@ -152,53 +163,58 @@ function HomePage() {
             mealPlans,
             cancellation
         };
-    }, [hotels]);
+    }, [hotels, staticHotelsMap]);
 
-    // Compute price bounds from hotels
+    // Compute price bounds from hotels (min is always 0, max dynamically tracks highest price)
     const priceBounds = useMemo(() => {
         if (hotels.length === 0) return { min: 0, max: 100000 };
 
-        let minPrice = Infinity;
         let maxPrice = 0;
 
         hotels.forEach(hotel => {
-            const price = hotel.Rooms?.[0]?.RSP || hotel.Rooms?.[0]?.TotalFare || 0;
+            const price = hotel.Rooms?.[0]?.RSP || hotel.Rooms?.[0]?.TotalFare || hotel.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
             if (price > 0) {
-                minPrice = Math.min(minPrice, price);
                 maxPrice = Math.max(maxPrice, price);
             }
         });
 
-        // Round to nice values
-        minPrice = minPrice === Infinity ? 0 : Math.floor(minPrice / 500) * 500;
+        // Round up to nice value
         maxPrice = maxPrice === 0 ? 100000 : Math.ceil(maxPrice / 500) * 500;
 
-        return { min: minPrice, max: maxPrice };
+        return { min: 0, max: maxPrice };
     }, [hotels]);
 
+    // Track if user has manually changed the price filter
+    const [isPriceCustomized, setIsPriceCustomized] = useState(false);
+
     // Initialize filters with dynamic price range
-    const [filters, setFilters] = useState(cachedSearch?.filters || {
+    const [filters, setFilters] = useState(() => ({
         priceRange: { min: 0, max: 100000 },
-        hotelName: '',
-        starRating: [],
-        guestRating: [],
-        amenities: [],
-        mealPlans: [],
-        cancellation: [],
-    });
+        hotelName: cachedSearch?.filters?.hotelName || '',
+        starRating: cachedSearch?.filters?.starRating || [],
+        guestRating: cachedSearch?.filters?.guestRating || [],
+        amenities: cachedSearch?.filters?.amenities || [],
+        mealPlans: cachedSearch?.filters?.mealPlans || [],
+        cancellation: cachedSearch?.filters?.cancellation || [],
+    }));
 
     // Sort state
     const [sortBy, setSortBy] = useState(cachedSearch?.sortBy || 'bestMatch');
 
-    // Update price range when bounds change (only on first load)
+    // Keep priceRange in sync with dynamic max when not manually customized
     useEffect(() => {
-        if (hotels.length > 0 && filters.priceRange.max === 100000) {
-            setFilters(prev => ({
-                ...prev,
-                priceRange: { min: priceBounds.min, max: priceBounds.max }
-            }));
+        if (!isPriceCustomized && hotels.length > 0) {
+            setFilters(prev => {
+                if (prev.priceRange?.min === 0 && prev.priceRange?.max === priceBounds.max) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    priceRange: { min: 0, max: priceBounds.max }
+                };
+            });
         }
-    }, [priceBounds, hotels.length]);
+    }, [priceBounds.max, hotels.length, isPriceCustomized]);
 
     // Function to search hotels for a specific chunk of hotel codes
     const searchHotelChunk = useCallback(async (codes, searchData, staticMap, appendResults = false) => {
@@ -345,6 +361,7 @@ function HomePage() {
         setHotels([]);
         setCurrentPage(0);
         setHasMore(true);
+        setIsPriceCustomized(false);
         // Reset filters on new search
         setFilters({
             priceRange: { min: 0, max: 100000 },
@@ -530,6 +547,10 @@ function HomePage() {
     }, [hasMore, loading, loadingMore, loadMoreHotels]);
 
     const handleFilterChange = (newFilters) => {
+        if (newFilters.priceRange) {
+            const isDefault = newFilters.priceRange.min === 0 && newFilters.priceRange.max >= priceBounds.max;
+            setIsPriceCustomized(!isDefault);
+        }
         setFilters(newFilters);
         // console.log('Filters:', newFilters);
     };
@@ -538,13 +559,16 @@ function HomePage() {
     const filteredHotels = useMemo(() => {
         return hotels.filter(hotel => {
             if (filters.hotelName?.trim()) {
-                const hotelName = (hotel.HotelName || '').toLowerCase();
-                if (!hotelName.includes(filters.hotelName.trim().toLowerCase())) return false;
+                const query = filters.hotelName.trim().toLowerCase();
+                const hotelName = (hotel.HotelName || hotel.hotelName || hotel.name || '').toLowerCase();
+                if (!hotelName.includes(query)) return false;
             }
 
-            // Price Filter
-            const price = hotel.Rooms?.[0]?.RSP || hotel.Rooms?.[0]?.TotalFare || 0;
-            if (price < filters.priceRange.min || price > filters.priceRange.max) return false;
+            // Price Filter (only applied when customized by user)
+            if (isPriceCustomized) {
+                const price = hotel.Rooms?.[0]?.RSP || hotel.Rooms?.[0]?.TotalFare || hotel.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
+                if (price < filters.priceRange.min || price > filters.priceRange.max) return false;
+            }
 
             // Star Rating Filter
             if (filters.starRating.length > 0) {
@@ -587,27 +611,154 @@ function HomePage() {
 
             return true;
         });
-    }, [hotels, filters]);
+    }, [hotels, filters, isPriceCustomized]);
 
     // Apply sorting to filtered hotels
     const sortedHotels = useMemo(() => {
         const sorted = [...filteredHotels];
         switch (sortBy) {
             case 'priceLowHigh':
-                return sorted.sort((a, b) => (a.Rooms?.[0]?.RSP || a.Rooms?.[0]?.TotalFare || 0) - (b.Rooms?.[0]?.RSP || b.Rooms?.[0]?.TotalFare || 0));
+                return sorted.sort((a, b) => {
+                    const priceA = a.Rooms?.[0]?.RSP || a.Rooms?.[0]?.TotalFare || a.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
+                    const priceB = b.Rooms?.[0]?.RSP || b.Rooms?.[0]?.TotalFare || b.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
+                    return priceA - priceB;
+                });
             case 'price_desc':
-                return sorted.sort((a, b) => (b.Rooms?.[0]?.RSP || b.Rooms?.[0]?.TotalFare || 0) - (a.Rooms?.[0]?.RSP || a.Rooms?.[0]?.TotalFare || 0));
+                return sorted.sort((a, b) => {
+                    const priceA = a.Rooms?.[0]?.RSP || a.Rooms?.[0]?.TotalFare || a.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
+                    const priceB = b.Rooms?.[0]?.RSP || b.Rooms?.[0]?.TotalFare || b.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
+                    return priceB - priceA;
+                });
             case 'starRating':
                 return sorted.sort((a, b) => parseStarRating(b.StarRating) - parseStarRating(a.StarRating));
             case 'guestRating':
                 return sorted.sort((a, b) => (parseFloat(b.Rating) || 0) - (parseFloat(a.Rating) || 0));
             case 'nameAZ':
-                return sorted.sort((a, b) => (a.HotelName || '').localeCompare(b.HotelName || ''));
+                return sorted.sort((a, b) => {
+                    const nameA = a.HotelName || a.hotelName || a.name || '';
+                    const nameB = b.HotelName || b.hotelName || b.name || '';
+                    return nameA.localeCompare(nameB);
+                });
             case 'bestMatch':
             default:
                 return sorted; // Keep original API order
         }
     }, [filteredHotels, sortBy]);
+
+    // Handle searching hotel from FilterSidebar
+    const handleSearchHotelFromFilter = useCallback(async (hotelOrQuery) => {
+        if (!hotelOrQuery) return;
+
+        // Auto-scroll to results area
+        if (resultsRef.current) {
+            resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Format dates helper
+        const formatLocalDate = (date) => {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        };
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const currentDates = {
+            checkInDate: searchParams?.checkInDate || formatLocalDate(today),
+            checkOutDate: searchParams?.checkOutDate || formatLocalDate(tomorrow),
+            guests: searchParams?.guests || { adults: 2, children: 0, rooms: 1 }
+        };
+
+        // Case 1: An object was passed (e.g. from suggestions)
+        if (typeof hotelOrQuery === 'object') {
+            const code = String(hotelOrQuery.Code || hotelOrQuery.HotelCode || '');
+            const name = hotelOrQuery.Name || hotelOrQuery.HotelName || hotelOrQuery.hotelName || '';
+
+            // If this hotel is already in loaded hotels, just set the filter
+            const existsInLoaded = hotels.some(h => String(h.HotelCode) === code);
+            if (existsInLoaded) {
+                setFilters(prev => ({ ...prev, hotelName: name }));
+                return;
+            }
+
+            // Otherwise, search for this specific hotel directly
+            if (code) {
+                handleSearch({
+                    destination: name,
+                    hotelCode: code,
+                    hotelInfo: {
+                        HotelName: name,
+                        HotelAddress: hotelOrQuery.Address || hotelOrQuery.CityName || '',
+                        StarRating: hotelOrQuery.StarRating || '',
+                        Latitude: hotelOrQuery.Latitude || '',
+                        Longitude: hotelOrQuery.Longitude || ''
+                    },
+                    ...currentDates
+                });
+                return;
+            }
+        }
+
+        // Case 2: A query string was passed
+        const query = typeof hotelOrQuery === 'string' ? hotelOrQuery.trim() : '';
+        if (!query) return;
+
+        // Check if any loaded hotel matches the query
+        const queryLower = query.toLowerCase();
+        const matchesInLoaded = hotels.filter(h => {
+            const hName = (h.HotelName || h.hotelName || h.name || '').toLowerCase();
+            return hName.includes(queryLower);
+        });
+
+        if (matchesInLoaded.length > 0) {
+            setFilters(prev => ({ ...prev, hotelName: query }));
+            return;
+        }
+
+        // Check if static map has this hotel
+        const staticMatch = Object.values(staticHotelsMap).find(h => {
+            const sName = (h.HotelName || h.hotelName || h.name || '').toLowerCase();
+            return sName.includes(queryLower);
+        });
+
+        if (staticMatch) {
+            handleSearch({
+                destination: staticMatch.HotelName || staticMatch.hotelName,
+                hotelCode: String(staticMatch.HotelCode),
+                hotelInfo: staticMatch,
+                ...currentDates
+            });
+            return;
+        }
+
+        // Otherwise query the backend /search-names to find the best match
+        try {
+            const apiRes = await searchHotelNames(query);
+            const suggestions = apiRes?.suggestions || [];
+            const bestMatch = suggestions.find(s => s.type === 'Hotel' || s.Code);
+
+            if (bestMatch) {
+                handleSearch({
+                    destination: bestMatch.Name || bestMatch.hotelName,
+                    hotelCode: String(bestMatch.Code || bestMatch.hotelCode),
+                    hotelInfo: {
+                        HotelName: bestMatch.Name || bestMatch.hotelName,
+                        HotelAddress: bestMatch.Address || bestMatch.CityName || '',
+                        StarRating: bestMatch.StarRating || ''
+                    },
+                    ...currentDates
+                });
+                return;
+            }
+        } catch (err) {
+            console.error('Failed to search hotel from filter:', err);
+        }
+
+        // Fallback: set the filter query so it updates the display
+        setFilters(prev => ({ ...prev, hotelName: query }));
+    }, [hotels, staticHotelsMap, searchParams, handleSearch]);
 
     const handleHotelSelect = (hotel) => {
         setInternalNavigation();
@@ -643,6 +794,8 @@ function HomePage() {
                             onFilterChange={handleFilterChange}
                             filterOptions={filterOptions}
                             priceBounds={priceBounds}
+                            onSearchHotel={handleSearchHotelFromFilter}
+                            fetchHotelSuggestions={searchHotelNames}
                         />
                     </div>
 

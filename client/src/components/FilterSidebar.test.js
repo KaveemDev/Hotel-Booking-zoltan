@@ -71,6 +71,23 @@ describe('FilterSidebar', () => {
         expect(mockOnFilterChange).toHaveBeenCalledWith(expect.objectContaining({
             hotelName: '',
             starRating: [],
+            priceRange: { min: 0, max: 100000 }
+        }));
+    });
+
+    test('clears all filters and resets price range to 0 and max bounds', () => {
+        render(
+            <FilterSidebar
+                filters={{ ...mockFilters, priceRange: { min: 500, max: 800 } }}
+                priceBounds={{ min: 0, max: 5000 }}
+                onFilterChange={mockOnFilterChange}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Clear all'));
+
+        expect(mockOnFilterChange).toHaveBeenCalledWith(expect.objectContaining({
+            priceRange: { min: 0, max: 5000 }
         }));
     });
 
@@ -85,4 +102,57 @@ describe('FilterSidebar', () => {
 
         expect(screen.getByText('Taj Palace Delhi')).toBeInTheDocument();
     });
+
+    test('selects a suggestion and calls onSearchHotel and onFilterChange', () => {
+        const mockOnSearchHotel = jest.fn();
+        render(
+            <FilterSidebar
+                filters={{ ...mockFilters, hotelName: 'taj' }}
+                onFilterChange={mockOnFilterChange}
+                onSearchHotel={mockOnSearchHotel}
+                filterOptions={{ hotelNames: ['The Oberoi Mumbai', 'Taj Palace Delhi'] }}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Taj Palace Delhi'));
+
+        expect(mockOnFilterChange).toHaveBeenCalledWith(expect.objectContaining({
+            hotelName: 'Taj Palace Delhi'
+        }));
+        expect(mockOnSearchHotel).toHaveBeenCalledWith('Taj Palace Delhi');
+    });
+
+    test('executes search when Search Hotels button is clicked', () => {
+        const mockOnSearchHotel = jest.fn();
+        render(
+            <FilterSidebar
+                filters={{ ...mockFilters, hotelName: 'Oberoi' }}
+                onFilterChange={mockOnFilterChange}
+                onSearchHotel={mockOnSearchHotel}
+                filterOptions={{ hotelNames: ['The Oberoi Mumbai'] }}
+            />
+        );
+
+        fireEvent.click(screen.getByText('Search Hotels'));
+
+        expect(mockOnSearchHotel).toHaveBeenCalledWith('Oberoi');
+    });
+
+    test('clears hotel name when clear button is clicked', () => {
+        render(
+            <FilterSidebar
+                filters={{ ...mockFilters, hotelName: 'Taj' }}
+                onFilterChange={mockOnFilterChange}
+                filterOptions={{ hotelNames: ['Taj Palace Delhi'] }}
+            />
+        );
+
+        const clearBtn = screen.getByTitle('Clear hotel name');
+        fireEvent.click(clearBtn);
+
+        expect(mockOnFilterChange).toHaveBeenCalledWith(expect.objectContaining({
+            hotelName: ''
+        }));
+    });
 });
+

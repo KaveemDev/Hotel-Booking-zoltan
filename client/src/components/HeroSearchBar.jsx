@@ -178,9 +178,9 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
            Name: h.hotelName || h.Name,
            Address: h.address || h.Address || '',
            CityName: h.cityName || h.CityName || '',
-           StarRating: h.StarRating || '',
-           Latitude: h.Latitude || '',
-           Longitude: h.Longitude || '',
+           StarRating: h.StarRating || h.starRating || '',
+           Latitude: h.Latitude || h.latitude || '',
+           Longitude: h.Longitude || h.longitude || '',
            type: 'Hotel'
          })).slice(0, 8);
       }

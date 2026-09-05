@@ -737,16 +737,25 @@ function HomePage() {
         try {
             const apiRes = await searchHotelNames(query);
             const suggestions = apiRes?.suggestions || [];
-            const bestMatch = suggestions.find(s => s.type === 'Hotel' || s.Code);
+            const bestMatch = suggestions.find(s => s.type === 'Hotel' || s.Type === 'Hotel' || s.Code || s.hotelCode);
 
             if (bestMatch) {
+                const hotelCode = String(bestMatch.Code || bestMatch.hotelCode);
+                const hotelName = bestMatch.Name || bestMatch.hotelName;
+                const hotelAddress = bestMatch.Address || bestMatch.address || bestMatch.CityName || bestMatch.cityName || '';
+                const starRating = bestMatch.StarRating || bestMatch.starRating || '';
+
                 handleSearch({
-                    destination: bestMatch.Name || bestMatch.hotelName,
-                    hotelCode: String(bestMatch.Code || bestMatch.hotelCode),
+                    destination: hotelName,
+                    hotelCode: hotelCode,
                     hotelInfo: {
-                        HotelName: bestMatch.Name || bestMatch.hotelName,
-                        HotelAddress: bestMatch.Address || bestMatch.CityName || '',
-                        StarRating: bestMatch.StarRating || ''
+                        HotelName: hotelName,
+                        HotelAddress: hotelAddress,
+                        Address: hotelAddress,
+                        StarRating: starRating,
+                        HotelRating: starRating,
+                        Latitude: bestMatch.Latitude || bestMatch.latitude || '',
+                        Longitude: bestMatch.Longitude || bestMatch.longitude || ''
                     },
                     ...currentDates
                 });

@@ -442,15 +442,11 @@ exports.searchHotel = async (req, res) => {
 
       // Async: Save hotel names for search suggestions
       try {
-        response.data.HotelResult.forEach(hotel => {
-          if (hotel.HotelName && hotel.HotelCode) {
-            mysqlDataService.saveHotelNameMapping(
-              hotel.HotelName,
-              hotel.HotelCode,
-              hotel.Address || ''
-            ).catch(err => console.error('Bg save name error:', err.message));
-          }
-        });
+        mysqlDataService.saveHotelNameMappingsBulk(response.data.HotelResult)
+          .then(count => {
+            if (count > 0) console.log(`Saved ${count} hotel names from search results into searchable DB`);
+          })
+          .catch(err => console.error('Bg bulk save names error:', err.message));
       } catch (err) {
         console.error('Error initiating bg save:', err);
       }

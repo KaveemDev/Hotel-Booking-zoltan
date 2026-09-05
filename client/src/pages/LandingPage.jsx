@@ -270,13 +270,13 @@ const LandingPage = () => {
             const hotelData = await searchHotelNames(queryStr.trim());
             if (hotelData?.suggestions) {
                 hotelSuggestions = hotelData.suggestions.map(h => ({
-                    Code: h.hotelCode,
-                    Name: h.hotelName,
-                    Address: h.address,
-                    CityName: h.cityName || '',
-                    StarRating: h.StarRating || '',
-                    Latitude: h.Latitude || '',
-                    Longitude: h.Longitude || '',
+                    Code: h.Code || h.hotelCode,
+                    Name: h.Name || h.hotelName,
+                    Address: h.Address || h.address || '',
+                    CityName: h.CityName || h.cityName || '',
+                    StarRating: h.StarRating || h.starRating || '',
+                    Latitude: h.Latitude || h.latitude || '',
+                    Longitude: h.Longitude || h.longitude || '',
                     type: 'Hotel'
                 }));
             }
@@ -363,10 +363,13 @@ const LandingPage = () => {
                         const hotelData = await searchHotelNames(destination);
                         if (hotelData?.suggestions) {
                             hotelSuggestions = hotelData.suggestions.map(h => ({
-                                Code: h.hotelCode,
-                                Name: h.hotelName,
-                                Address: h.address,
-                                CityName: h.cityName || '',
+                                Code: h.Code || h.hotelCode,
+                                Name: h.Name || h.hotelName,
+                                Address: h.Address || h.address || '',
+                                CityName: h.CityName || h.cityName || '',
+                                StarRating: h.StarRating || h.starRating || '',
+                                Latitude: h.Latitude || h.latitude || '',
+                                Longitude: h.Longitude || h.longitude || '',
                                 type: 'Hotel'
                             }));
                         }

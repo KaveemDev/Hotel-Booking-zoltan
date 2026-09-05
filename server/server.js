@@ -73,6 +73,12 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on: http://0.0.0.0:${PORT}`);
   console.log(`Health Check: http://0.0.0.0:${PORT}/health`);
   console.log('='.repeat(60));
+
+  // Initialize hotels table and backfill from existing static_cache
+  const mysqlDataService = require('./services/mysqlDataService');
+  mysqlDataService.ensureHotelsTable()
+    .then(() => mysqlDataService.backfillFromStaticCache())
+    .catch(err => console.error('Database initialization/backfill warning:', err.message));
 });
 
 // Graceful shutdown

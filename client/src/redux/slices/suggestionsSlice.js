@@ -81,17 +81,25 @@ export const fetchHotelSuggestions = createAsyncThunk(
     const exactKey = query.toLowerCase();
     
     const state = getState().suggestions;
-    if (state.hotelCache[exactKey]) {
+    if (state.hotelCache[exactKey] && state.hotelCache[exactKey].length > 0) {
       return { prefix: exactKey, query, suggestions: state.hotelCache[exactKey], cached: true };
     }
-    if (query.length === 2 && state.hotelCache[prefix]) {
+    if (query.length === 2 && state.hotelCache[prefix] && state.hotelCache[prefix].length > 0) {
       return { prefix, query, suggestions: state.hotelCache[prefix], cached: true };
     }
 
     const hotelData = await searchHotelNames(query);
     let suggestions = [];
     if (hotelData && hotelData.suggestions) {
-      suggestions = hotelData.suggestions.map(h => ({ ...h, type: 'Hotel' }));
+      suggestions = hotelData.suggestions.map(h => ({
+        ...h,
+        Code: h.Code || h.hotelCode,
+        Name: h.Name || h.hotelName,
+        Address: h.Address || h.address || '',
+        CityName: h.CityName || h.cityName || '',
+        StarRating: h.StarRating || h.starRating || '',
+        type: 'Hotel'
+      }));
     }
 
     return { prefix: exactKey, query, suggestions, cached: false };

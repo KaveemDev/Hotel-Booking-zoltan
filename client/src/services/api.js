@@ -2,11 +2,11 @@ import axios from 'axios';
 import {
   getCachedCountries,
   getCachedCities,
-  getCachedHotels,
-  getCachedHotelDetails
+  getCachedHotels
 } from './staticDataService';
+import { auth } from '../config/firebase';
 
-const SERVER_URL = 'https://api.zovotel.com';
+export const SERVER_URL = process.env.REACT_APP_API_URL || 'https://api.zovotel.com';
 const API_BASE_URL = `${SERVER_URL}/api/hotels`;
 
 const api = axios.create({
@@ -15,6 +15,17 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+// Send the signed-in user's Firebase ID token with requests to our own API (never to other hosts)
+const attachAuthToken = async (config) => {
+  const user = auth.currentUser;
+  if (user && axios.getUri(config).startsWith(SERVER_URL)) {
+    config.headers.Authorization = `Bearer ${await user.getIdToken()}`;
+  }
+  return config;
+};
+api.interceptors.request.use(attachAuthToken);
+axios.interceptors.request.use(attachAuthToken);
 
 /**
  * Fetch countries - Firebase cache first, then API

@@ -1,7 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getDatabase } from "firebase/database";
 
 // Firebase configuration
 const firebaseConfig = {
@@ -21,7 +20,7 @@ const app = initializeApp(firebaseConfig);
 // Initialize services
 const analytics = getAnalytics(app);
 const auth = getAuth(app);
-const database = getDatabase(app);
+// Realtime Database is created where it's used (chat), so its SDK isn't in the main bundle
 
 // Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
@@ -29,4 +28,4 @@ googleProvider.setCustomParameters({
     prompt: 'select_account'
 });
 
-export { app, analytics, auth, database, googleProvider };
+export { app, analytics, auth, googleProvider };

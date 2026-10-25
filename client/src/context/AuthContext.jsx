@@ -11,20 +11,23 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
 import axios from 'axios';
+import { SERVER_URL } from '../services/api';
 
 const AuthContext = createContext();
 
-const SERVER_URL = 'https://api.zovotel.com';
 const API = `${SERVER_URL}/api/users`;
 
 // Admin emails - add your admin email addresses here
-const ADMIN_EMAILS = ['admin@zoltan.com'];
+const ADMIN_EMAILS = ['admin@zovotel.com', 'admin@zoltan.com'];
 
 export function AuthProvider({ children }) {
     const [currentUser, setCurrentUser] = useState(null);
     const [userData, setUserData] = useState(null);
     const [likedHotels, setLikedHotels] = useState({});
     const [bookings, setBookings] = useState([]);
+    // authReady: Firebase knows who is signed in (enough to render pages).
+    // loading: profile/role still being fetched (ProtectedRoute waits on this).
+    const [authReady, setAuthReady] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
@@ -357,7 +360,9 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             setCurrentUser(user);
+            setAuthReady(true);
             if (user) {
+                setLoading(true);
                 // Try to sync any pending user data first
                 await retryPendingSyncs();
 
@@ -375,6 +380,7 @@ export function AuthProvider({ children }) {
         });
 
         return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, [fetchLikedHotels, fetchBookings]);
 
     const userRole = userData?.role || (isAdmin(currentUser?.email) ? 'admin' : 'user');
@@ -405,7 +411,7 @@ export function AuthProvider({ children }) {
 
     return (
         <AuthContext.Provider value={value}>
-            {!loading && children}
+            {authReady && children}
         </AuthContext.Provider>
     );
 }

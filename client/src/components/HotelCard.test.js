@@ -1,84 +1,73 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import '@testing-library/jest-dom';
+import { MemoryRouter } from 'react-router-dom';
 import HotelCard from './HotelCard';
 
+jest.mock('../context/AuthContext', () => ({
+    useAuth: () => ({
+        currentUser: null,
+        isHotelLiked: () => false,
+        likeHotel: jest.fn(),
+        unlikeHotel: jest.fn()
+    })
+}));
+
+// Shape of a merged search result as HomePage builds it
+const hotel = {
+    HotelCode: '1001',
+    HotelName: 'Test Hotel',
+    HotelAddress: 'Test Location',
+    HotelPicture: 'test-image.jpg',
+    StarRating: 'FourStar',
+    Rating: 4.5,
+    ratingText: 'Excellent',
+    reviews: 100,
+    Facilities: ['Free WiFi', 'Pool'],
+    Rooms: [{ Name: ['Deluxe Room'], TotalFare: 12345.6, IsRefundable: true, MealType: 'BreakFast' }]
+};
+
+const renderCard = (props = {}) =>
+    render(<MemoryRouter><HotelCard hotel={hotel} {...props} /></MemoryRouter>);
+
 describe('HotelCard', () => {
-    const mockHotel = {
-        id: 1,
-        name: "Test Hotel",
-        image: "test-image.jpg",
-        stars: 5,
-        location: "Test Location",
-        distance: "1 km from center",
-        rating: 9.0,
-        ratingText: "Excellent",
-        reviews: 100,
-        amenities: ["Free WiFi", "Pool"],
-        roomType: "Deluxe Room",
-        originalPrice: 200,
-        discount: 10,
-        freeCancellation: true,
-        mealPlan: "Breakfast included"
-    };
-
-    test('renders hotel information correctly', () => {
-        render(<HotelCard hotel={mockHotel} />);
-
+    test('renders hotel information', () => {
+        renderCard();
         expect(screen.getByText('Test Hotel')).toBeInTheDocument();
         expect(screen.getByText('Test Location')).toBeInTheDocument();
         expect(screen.getByText('Excellent')).toBeInTheDocument();
         expect(screen.getByText('100 reviews')).toBeInTheDocument();
         expect(screen.getByText('Free WiFi')).toBeInTheDocument();
+        expect(screen.getByText('4-Star')).toBeInTheDocument();
+        expect(screen.getByText('Breakfast Included')).toBeInTheDocument();
     });
 
-    test('calculates and displays correct prices', () => {
-        render(<HotelCard hotel={mockHotel} />);
-
-        // Original price: 200
-        // Discount: 10% -> 20 off -> Final: 180
-        expect(screen.getByText('$200')).toBeInTheDocument(); // Original
-        expect(screen.getByText('$180')).toBeInTheDocument(); // Final
-        expect(screen.getByText('SAVE 10%')).toBeInTheDocument();
+    test('shows the rounded total fare in INR', () => {
+        renderCard();
+        expect(screen.getByText('₹ 12,346')).toBeInTheDocument();
     });
 
-    test('renders free cancellation badge when applicable', () => {
-        render(<HotelCard hotel={mockHotel} />);
+    test('lazy-loads the hotel image', () => {
+        renderCard();
+        expect(screen.getByAltText('Test Hotel')).toHaveAttribute('loading', 'lazy');
+    });
+
+    test('free cancellation badge follows IsRefundable', () => {
+        renderCard();
         expect(screen.getByText('Free cancellation')).toBeInTheDocument();
     });
 
-    test('does not render free cancellation badge when not applicable', () => {
-        const hotelNoCancel = { ...mockHotel, freeCancellation: false };
-        render(<HotelCard hotel={hotelNoCancel} />);
+    test('no free cancellation badge for non-refundable rooms', () => {
+        render(
+            <MemoryRouter>
+                <HotelCard hotel={{ ...hotel, Rooms: [{ ...hotel.Rooms[0], IsRefundable: false }] }} />
+            </MemoryRouter>
+        );
         expect(screen.queryByText('Free cancellation')).not.toBeInTheDocument();
     });
 
-    test('calls onSelect when clicked', () => {
-        const mockOnSelect = jest.fn();
-        render(<HotelCard hotel={mockHotel} onSelect={mockOnSelect} />);
-
+    test('calls onSelect with the hotel when clicked', () => {
+        const onSelect = jest.fn();
+        renderCard({ onSelect });
         fireEvent.click(screen.getByText('Test Hotel'));
-        expect(mockOnSelect).toHaveBeenCalledWith(mockHotel);
-    });
-
-    test('toggles favorite heart icon', () => {
-        render(<HotelCard hotel={mockHotel} />);
-
-        const heartButton = screen.getByLabelText('Add to favorites');
-
-        // Initial state: not favorite (gray)
-        // Note: We can't easily test color classes without style computation, but we can check if the class changes
-        // or just check if the click handler works if we mocked it. 
-        // Since state is internal, we can check if the SVG inside has the 'fill-red-500' class after click.
-
-        fireEvent.click(heartButton);
-
-        // After click, the heart icon should have the active class
-        // The SVG is the first child of the button
-        const svg = heartButton.querySelector('svg');
-        expect(svg).toHaveClass('fill-red-500');
-
-        fireEvent.click(heartButton);
-        expect(svg).not.toHaveClass('fill-red-500');
+        expect(onSelect).toHaveBeenCalledWith(hotel);
     });
 });
-

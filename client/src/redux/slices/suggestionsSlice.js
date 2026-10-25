@@ -75,34 +75,39 @@ export const fetchInitialData = createAsyncThunk(
 export const fetchHotelSuggestions = createAsyncThunk(
   'suggestions/fetchHotelSuggestions',
   async (query, { getState }) => {
-    if (!query || query.length < 2) return { query, prefix: query, suggestions: [] };
+    if (!query || query.trim().length < 2) return { query, prefix: query, suggestions: [], cached: true };
     
-    const prefix = query.substring(0, 2).toLowerCase();
-    const exactKey = query.toLowerCase();
+    const cleanQuery = query.trim();
+    const prefix = cleanQuery.substring(0, 2).toLowerCase();
+    const exactKey = cleanQuery.toLowerCase();
     
     const state = getState().suggestions;
-    if (state.hotelCache[exactKey] && state.hotelCache[exactKey].length > 0) {
-      return { prefix: exactKey, query, suggestions: state.hotelCache[exactKey], cached: true };
+    if (state.hotelCache && state.hotelCache[exactKey] !== undefined) {
+      return { prefix: exactKey, query: cleanQuery, suggestions: state.hotelCache[exactKey], cached: true };
     }
-    if (query.length === 2 && state.hotelCache[prefix] && state.hotelCache[prefix].length > 0) {
-      return { prefix, query, suggestions: state.hotelCache[prefix], cached: true };
-    }
-
-    const hotelData = await searchHotelNames(query);
-    let suggestions = [];
-    if (hotelData && hotelData.suggestions) {
-      suggestions = hotelData.suggestions.map(h => ({
-        ...h,
-        Code: h.Code || h.hotelCode,
-        Name: h.Name || h.hotelName,
-        Address: h.Address || h.address || '',
-        CityName: h.CityName || h.cityName || '',
-        StarRating: h.StarRating || h.starRating || '',
-        type: 'Hotel'
-      }));
+    if (cleanQuery.length === 2 && state.hotelCache && state.hotelCache[prefix] !== undefined) {
+      return { prefix, query: cleanQuery, suggestions: state.hotelCache[prefix], cached: true };
     }
 
-    return { prefix: exactKey, query, suggestions, cached: false };
+    try {
+      const hotelData = await searchHotelNames(cleanQuery);
+      let suggestions = [];
+      if (hotelData && Array.isArray(hotelData.suggestions)) {
+        suggestions = hotelData.suggestions.map(h => ({
+          ...h,
+          Code: h.Code || h.hotelCode,
+          Name: h.Name || h.hotelName,
+          Address: h.Address || h.address || '',
+          CityName: h.CityName || h.cityName || '',
+          StarRating: h.StarRating || h.starRating || '',
+          type: 'Hotel'
+        }));
+      }
+
+      return { prefix: exactKey, query: cleanQuery, suggestions, cached: false };
+    } catch (e) {
+      return { prefix: exactKey, query: cleanQuery, suggestions: [], cached: false };
+    }
   }
 );
 

@@ -133,6 +133,7 @@ const LandingPage = () => {
     const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
     const [isCalendarOverlayOpen, setIsCalendarOverlayOpen] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
+    const hotelSearchCacheRef = useRef({});
     const [isSearching, setIsSearching] = useState(false);
     const searchTimeoutRef = useRef(null);
     const [showDropdown, setShowDropdown] = useState(false);
@@ -288,6 +289,10 @@ const LandingPage = () => {
 
 
     useEffect(() => {
+        if (!isSearchOverlayOpen) {
+            return;
+        }
+
         const getSuggestions = async () => {
             if (searchTimeoutRef.current) {
                 clearTimeout(searchTimeoutRef.current);
@@ -360,9 +365,14 @@ const LandingPage = () => {
 
                     let hotelSuggestions = [];
                     try {
-                        const hotelData = await searchHotelNames(destination);
-                        if (hotelData?.suggestions) {
-                            hotelSuggestions = hotelData.suggestions.map(h => ({
+                        const exactKey = destination.trim().toLowerCase();
+                        if (hotelSearchCacheRef.current[exactKey] === undefined) {
+                            const hotelData = await searchHotelNames(destination.trim());
+                            hotelSearchCacheRef.current[exactKey] = hotelData?.suggestions || [];
+                        }
+                        const cached = hotelSearchCacheRef.current[exactKey];
+                        if (cached && Array.isArray(cached)) {
+                            hotelSuggestions = cached.map(h => ({
                                 Code: h.Code || h.hotelCode,
                                 Name: h.Name || h.hotelName,
                                 Address: h.Address || h.address || '',
@@ -398,7 +408,7 @@ const LandingPage = () => {
         };
         const timeoutId = setTimeout(getSuggestions, 300);
         return () => clearTimeout(timeoutId);
-    }, [destination, getCountryName]);
+    }, [destination, isSearchOverlayOpen, getCountryName]);
 
     const typewriterText = useTypewriter(
         ['Your Dream Stay', 'Best Hotel Deals', 'Luxury Resorts', 'Beach Getaways', 'City Adventures'],

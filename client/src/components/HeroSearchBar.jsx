@@ -57,6 +57,21 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
   const dispatch = useDispatch();
   const { countries, cities, hotelCache } = useSelector((state) => state.suggestions);
 
+  const hotelCacheRef = useRef(hotelCache);
+  useEffect(() => {
+    hotelCacheRef.current = hotelCache;
+  }, [hotelCache]);
+
+  const recentHotelsRef = useRef(recentHotels);
+  useEffect(() => {
+    recentHotelsRef.current = recentHotels;
+  }, [recentHotels]);
+
+  const citiesRef = useRef(cities);
+  useEffect(() => {
+    citiesRef.current = cities;
+  }, [cities]);
+
   // Fetch countries and all cities on mount
   useEffect(() => {
     dispatch(fetchInitialData());
@@ -80,7 +95,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
     const searchLower = queryStr.trim().toLowerCase();
     const mappedSearchLower = POPULAR_DESTINATION_MAP[searchLower]?.toLowerCase() || searchLower;
 
-    let citySuggestions = (cities || []).filter(c => 
+    let citySuggestions = (citiesRef.current || []).filter(c => 
       c.Name.toLowerCase().includes(mappedSearchLower) || 
       (c.countryName && c.countryName.toLowerCase().includes(mappedSearchLower))
     );
@@ -144,9 +159,10 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
     });
     citySuggestions = citySuggestions.slice(0, 8);
 
+    const currentRecentHotels = recentHotelsRef.current || [];
     const recentHotelSuggestions = Array.from(
       new Map(
-        recentHotels
+        currentRecentHotels
           .filter(hotel => (hotel.HotelName || '').toLowerCase().includes(searchLower))
           .map(hotel => [String(hotel.HotelCode), {
             Code: hotel.HotelCode,
@@ -164,10 +180,10 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
     let hotelSuggestions = [];
     try {
       const exactKey = queryStr.trim().toLowerCase();
-      let cachedHotels = hotelCache[exactKey] || hotelCache[queryStr.trim().substring(0, 2).toLowerCase()];
-      if (!cachedHotels || queryStr.trim().length > 2) {
+      let cachedHotels = hotelCacheRef.current[exactKey];
+      if (cachedHotels === undefined) {
          const result = await dispatch(fetchHotelSuggestions(queryStr.trim())).unwrap();
-         cachedHotels = result?.suggestions || cachedHotels;
+         cachedHotels = result?.suggestions || [];
       }
       if (cachedHotels) {
          hotelSuggestions = cachedHotels.filter(h => 
@@ -194,7 +210,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
       ...hotelSuggestions.filter(hotel => !recentHotelSuggestions.some(recent => String(recent.Code) === String(hotel.Code)))
     ];
     return combined.length > 0 ? combined[0] : null;
-  }, [cities, countries, getCountryName, dispatch, hotelCache, recentHotels]);
+  }, [getCountryName, dispatch]);
 
   // Focus overlay input when opened
   useEffect(() => {
@@ -393,6 +409,11 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
 
   // Fetch suggestions (Cities across countries + Hotels)
   useEffect(() => {
+    // Only search suggestions if the search overlay is actively open
+    if (!isSearchOverlayOpen) {
+      return;
+    }
+
     const getSuggestions = async () => {
       if (searchTimeoutRef.current) {
           clearTimeout(searchTimeoutRef.current);
@@ -415,7 +436,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
             ...matchedCountryCodes
           ]));
 
-          let citySuggestions = (cities || []).filter(c => 
+          let citySuggestions = (citiesRef.current || []).filter(c => 
             c.Name.toLowerCase().includes(mappedSearchLower) || 
             (c.countryName && c.countryName.toLowerCase().includes(mappedSearchLower))
           );
@@ -470,11 +491,11 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
           });
           citySuggestions = citySuggestions.slice(0, 8);
 
-          // Hotels from the currently loaded search results should show up immediately,
-          // even if the background DB autocomplete save is still catching up.
+          // Hotels from the currently loaded search results should show up immediately
+          const currentRecentHotels = recentHotelsRef.current || [];
           const recentHotelSuggestions = Array.from(
             new Map(
-              recentHotels
+              currentRecentHotels
                 .filter(hotel => (hotel.HotelName || '').toLowerCase().includes(searchLower))
                 .map(hotel => [String(hotel.HotelCode), {
                   Code: hotel.HotelCode,
@@ -491,11 +512,11 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
 
           let hotelSuggestions = [];
           try {
-            const exactKey = destination.toLowerCase();
-            let cachedHotels = hotelCache[exactKey] || hotelCache[destination.substring(0, 2).toLowerCase()];
-            if (!cachedHotels || destination.length > 2) {
-               const result = await dispatch(fetchHotelSuggestions(destination)).unwrap();
-               cachedHotels = result?.suggestions || cachedHotels;
+            const exactKey = destination.trim().toLowerCase();
+            let cachedHotels = hotelCacheRef.current[exactKey];
+            if (cachedHotels === undefined) {
+               const result = await dispatch(fetchHotelSuggestions(destination.trim())).unwrap();
+               cachedHotels = result?.suggestions || [];
             }
             if (cachedHotels) {
                hotelSuggestions = cachedHotels.filter(h => 
@@ -548,7 +569,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
         if (searchTimeoutRef.current) {
             clearTimeout(searchTimeoutRef.current);
     }};
-  }, [destination, getCountryName, dispatch, hotelCache, cities, recentHotels]);
+  }, [destination, isSearchOverlayOpen, getCountryName, dispatch]);
 
   const handleGuestChange = (type, operation) => {
     setGuests(prev => {

@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
+const { requireAdmin } = require('../middleware/auth');
+
+// Public coupon validation (users apply coupons) — registered before the admin guard
+router.post('/coupons/validate', adminController.validateCoupon);
+
+router.use(requireAdmin);
 
 // Get agency balance from TBO
 router.get('/balance', adminController.getAgencyBalance);
@@ -45,8 +51,5 @@ router.post('/coupons', adminController.createCoupon);
 router.get('/coupons', adminController.getAllCoupons);
 router.put('/coupons/:code', adminController.updateCoupon);
 router.delete('/coupons/:code', adminController.deleteCoupon);
-
-// Public coupon validation (users apply coupons)
-router.post('/coupons/validate', adminController.validateCoupon);
 
 module.exports = router;

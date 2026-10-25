@@ -10,6 +10,7 @@ const bookingRoutes = require('./routes/bookingRoutes');
 const userRoutes = require('./routes/userRoutes');
 
 const app = express();
+app.disable('x-powered-by');
 
 // Middleware
 app.use(cors({
@@ -60,7 +61,8 @@ app.use((err, req, res, next) => {
   console.error('Server Error:', err);
   res.status(500).json({
     error: 'Internal server error',
-    message: err.message
+    // Internal details stay in the logs in production
+    message: process.env.NODE_ENV === 'production' ? 'Something went wrong. Please try again.' : err.message
   });
 });
 

@@ -6,6 +6,9 @@
 const express = require('express');
 const router = express.Router();
 const syncController = require('../controllers/syncController');
+const { requireAdmin } = require('../middleware/auth');
+
+router.use(requireAdmin);
 
 // Sync endpoints
 router.post('/countries', syncController.syncCountries);

@@ -15,8 +15,8 @@ module.exports = {
     getAgencyBalanceUrl: process.env.TBO_GET_AGENCY_BALANCE_URL || 'https://api.travelboutiqueonline.com/SharedAPI/SharedData.svc/rest/GetAgencyBalance',
     // Static data endpoints credentials
     staticAuth: {
-      username: process.env.TBO_STATIC_USERNAME || 'TBOStaticAPITest',
-      password: process.env.TBO_STATIC_PASSWORD || 'Tbo@11530818'
+      username: process.env.TBO_STATIC_USERNAME,
+      password: process.env.TBO_STATIC_PASSWORD
     },
     // Search/Prebook/Book endpoints credentials
     apiAuth: {

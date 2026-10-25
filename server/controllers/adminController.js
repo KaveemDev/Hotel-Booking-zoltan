@@ -856,6 +856,51 @@ exports.deleteCoupon = async (req, res) => {
 /**
  * Validate and apply a coupon code (public endpoint for users)
  */
+/**
+ * Shared coupon rules for /coupons/validate and payment order creation.
+ * Returns { coupon, discount, amount } or { status, error } when the coupon can't be used.
+ */
+exports.computeCouponDiscount = async (code, bookingAmount) => {
+    const couponCode = String(code).toUpperCase().trim();
+    const coupon = await getSettingsFromCache(`coupon_${couponCode}`);
+
+    if (!coupon) return { status: 404, error: 'Invalid coupon code' };
+    if (!coupon.isActive) return { status: 400, error: 'This coupon is no longer active' };
+    if (coupon.expiryDate && new Date(coupon.expiryDate) < new Date()) {
+        return { status: 400, error: 'This coupon has expired' };
+    }
+    if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) {
+        return { status: 400, error: 'This coupon has reached its usage limit' };
+    }
+
+    const amount = parseFloat(bookingAmount) || 0;
+    if (coupon.minBookingAmount > 0 && amount < coupon.minBookingAmount) {
+        return { status: 400, error: `Minimum booking amount of ₹${coupon.minBookingAmount} required` };
+    }
+
+    let discount = 0;
+    if (coupon.discountType === 'percentage') {
+        discount = (amount * coupon.discountValue) / 100;
+        if (coupon.maxDiscount > 0 && discount > coupon.maxDiscount) {
+            discount = coupon.maxDiscount;
+        }
+    } else {
+        discount = coupon.discountValue;
+    }
+
+    discount = Math.min(discount, amount); // Can't discount more than the amount
+    return { coupon, discount, amount };
+};
+
+// Count one use of a coupon after a confirmed booking
+// shortcut: read-modify-write on a JSON row, two bookings confirming in the same instant can count once; move to an atomic column if coupons get heavy use
+exports.recordCouponUse = async (code) => {
+    const key = `coupon_${String(code).toUpperCase().trim()}`;
+    const coupon = await getSettingsFromCache(key);
+    if (!coupon) return;
+    await setSettingsToCache(key, { ...coupon, usedCount: (coupon.usedCount || 0) + 1 });
+};
+
 exports.validateCoupon = async (req, res) => {
     try {
         const { code, bookingAmount } = req.body;
@@ -864,48 +909,11 @@ exports.validateCoupon = async (req, res) => {
             return res.status(400).json({ error: 'Coupon code is required' });
         }
 
-        const couponCode = code.toUpperCase().trim();
-        const coupon = await getSettingsFromCache(`coupon_${couponCode}`);
-
-        if (!coupon) {
-            return res.status(404).json({ error: 'Invalid coupon code' });
+        const result = await exports.computeCouponDiscount(code, bookingAmount);
+        if (result.error) {
+            return res.status(result.status).json({ error: result.error });
         }
-
-        // Check active
-        if (!coupon.isActive) {
-            return res.status(400).json({ error: 'This coupon is no longer active' });
-        }
-
-        // Check expiry
-        if (coupon.expiryDate && new Date(coupon.expiryDate) < new Date()) {
-            return res.status(400).json({ error: 'This coupon has expired' });
-        }
-
-        // Check usage limit
-        if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) {
-            return res.status(400).json({ error: 'This coupon has reached its usage limit' });
-        }
-
-        // Check minimum booking amount
-        const amount = parseFloat(bookingAmount) || 0;
-        if (coupon.minBookingAmount > 0 && amount < coupon.minBookingAmount) {
-            return res.status(400).json({
-                error: `Minimum booking amount of ₹${coupon.minBookingAmount} required`
-            });
-        }
-
-        // Calculate discount
-        let discount = 0;
-        if (coupon.discountType === 'percentage') {
-            discount = (amount * coupon.discountValue) / 100;
-            if (coupon.maxDiscount > 0 && discount > coupon.maxDiscount) {
-                discount = coupon.maxDiscount;
-            }
-        } else {
-            discount = coupon.discountValue;
-        }
-
-        discount = Math.min(discount, amount); // Can't discount more than the amount
+        const { coupon, discount, amount } = result;
 
         res.json({
             success: true,

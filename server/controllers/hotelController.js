@@ -178,14 +178,9 @@ exports.getHotelCodeList = async (req, res) => {
     // Check cache first
     const cachedHotels = await mysqlDataService.getHotels(cityCode);
     if (cachedHotels) {
-      try {
-        const savedCount = await mysqlDataService.saveHotelNameMappingsBulk(cachedHotels);
-        if (savedCount > 0) {
-          console.log(`Backfilled ${savedCount} hotel names into searchable DB for cached city ${cityCode}`);
-        }
-      } catch (mappingError) {
-        console.error(`Failed to backfill cached hotel names for city ${cityCode}:`, mappingError.message);
-      }
+      // Backfill in the background so the search isn't blocked on a bulk upsert
+      mysqlDataService.saveHotelNameMappingsBulk(cachedHotels)
+        .catch(mappingError => console.error(`Failed to backfill cached hotel names for city ${cityCode}:`, mappingError.message));
 
       console.log(`Returning ${cachedHotels.length} hotels from cache`);
       return res.json({ Hotels: cachedHotels, source: 'cache' });
@@ -203,12 +198,9 @@ exports.getHotelCodeList = async (req, res) => {
     if (response.data.Hotels && response.data.Hotels.length > 0) {
       await mysqlDataService.saveHotels(cityCode, response.data.Hotels);
 
-      try {
-        const savedCount = await mysqlDataService.saveHotelNameMappingsBulk(response.data.Hotels);
-        console.log(`Saved ${savedCount} hotel names into searchable DB for city ${cityCode}`);
-      } catch (mappingError) {
-        console.error(`Failed to save hotel name mappings for city ${cityCode}:`, mappingError.message);
-      }
+      mysqlDataService.saveHotelNameMappingsBulk(response.data.Hotels)
+        .then(savedCount => console.log(`Saved ${savedCount} hotel names into searchable DB for city ${cityCode}`))
+        .catch(mappingError => console.error(`Failed to save hotel name mappings for city ${cityCode}:`, mappingError.message));
     }
 
     console.log(`Hotels fetched: ${response.data.Hotels?.length || 0} hotels`);
@@ -540,6 +532,24 @@ exports.getCountryList = async (req, res) => {
   }
 };
 
+// BookingCode -> prebook TotalFare (the price the guest page charges), so payment can check the amount server-side.
+// shortcut: in-memory, per process; after a restart or on a second instance getPrebookFare re-runs prebook.
+const prebookFares = new Map();
+const rememberPrebookFare = (bookingCodes, data) => {
+  const room = data?.HotelResult?.[0]?.Rooms?.[0];
+  if (!room?.TotalFare) return;
+  [...bookingCodes, room.BookingCode].filter(Boolean).forEach(code => prebookFares.set(code, room.TotalFare));
+  while (prebookFares.size > 5000) prebookFares.delete(prebookFares.keys().next().value);
+};
+
+exports.getPrebookFare = async (bookingCode) => {
+  if (!prebookFares.has(bookingCode)) {
+    const response = await createSearchAxiosInstance().post(config.tboApi.preBookUrl, { BookingCode: bookingCode });
+    rememberPrebookFare([bookingCode], response.data);
+  }
+  return prebookFares.get(bookingCode) ?? null;
+};
+
 // PreBook hotel - Validates availability and returns final pricing
 exports.preBookHotel = async (req, res) => {
   try {
@@ -568,6 +578,8 @@ exports.preBookHotel = async (req, res) => {
         details: response.data
       });
     }
+
+    rememberPrebookFare([BookingCode], response.data);
 
     // Apply RSP Logic if present
     if (response.data.HotelResult && response.data.HotelResult.length > 0) {
@@ -666,7 +678,7 @@ exports.bookHotel = async (req, res) => {
       bookPayload.ArrivalTransport = ArrivalTransport;
     }
 
-    console.log('BOOK PAYLOAD:', JSON.stringify(bookPayload, null, 2));
+    console.log(`BOOK PAYLOAD: HotelCode=${bookPayload.HotelCode} Rooms=${bookPayload.NoOfRooms}`);
 
     const axiosInstance = createSearchAxiosInstance();
 
@@ -783,19 +795,20 @@ exports.fetchAndCacheHotelCardInfo = async (req, res) => {
 
     console.log(`Fetching info for ${missingCodes.length} hotels from TBO API`);
 
-    // Step 3: Fetch info in batches to avoid rate limiting
+    // Step 3: Fetch info in batches, a few batches at a time (sequential was ~20 round trips per 100 hotels)
     const BATCH_SIZE = 5;
-    const DELAY_MS = 100;
+    const CONCURRENCY = 4;
     const newInfo = {};
-
+    const axiosInstance = createStaticAxiosInstance();
+    const batches = [];
     for (let i = 0; i < missingCodes.length; i += BATCH_SIZE) {
-      const batch = missingCodes.slice(i, i + BATCH_SIZE);
+      batches.push(missingCodes.slice(i, i + BATCH_SIZE));
+    }
+
+    const fetchBatch = async (batch) => {
       const hotelCodesString = batch.join(',');
 
       try {
-        console.log(`Fetching batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.length} hotels`);
-
-        const axiosInstance = createStaticAxiosInstance();
         const response = await axiosInstance.post(
           `${config.tboApi.baseUrl}/Hoteldetails`,
           {
@@ -853,15 +866,17 @@ exports.fetchAndCacheHotelCardInfo = async (req, res) => {
           }
         }
 
-        // Small delay between batches to avoid rate limiting
-        if (i + BATCH_SIZE < missingCodes.length) {
-          await new Promise(resolve => setTimeout(resolve, DELAY_MS));
-        }
       } catch (batchError) {
-        console.error(`Error fetching batch starting at ${i}:`, batchError.message);
+        console.error(`Error fetching card info batch ${hotelCodesString}:`, batchError.message);
         // Continue with next batch even if one fails
       }
-    }
+    };
+
+    // CONCURRENCY workers pull batches off a shared queue
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, async () => {
+      while (next < batches.length) await fetchBatch(batches[next++]);
+    }));
 
     // Merge cached info with newly fetched info
     const allInfo = { ...cachedInfo, ...newInfo };

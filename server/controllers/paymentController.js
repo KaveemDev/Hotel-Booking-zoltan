@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const config = require('../config/config');
 const db = require('../config/db');
 const bookingService = require('./bookingController');
+const hotelController = require('./hotelController');
+const adminController = require('./adminController');
 const axios = require('axios');
 const { sendEmail } = require('../services/emailService');
 const { getBookingConfirmationTemplate } = require('../services/emailTemplates');
@@ -25,6 +27,35 @@ const createSearchAxiosInstance = () => {
         }
     });
 };
+
+const isValidSignature = (orderId, paymentId, signature) => {
+    const expected = crypto
+        .createHmac('sha256', config.razorpay.keySecret)
+        .update(`${orderId}|${paymentId}`)
+        .digest('hex');
+    return typeof signature === 'string' && signature.length === expected.length &&
+        crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+};
+
+// Atomically claims a pending order so two concurrent verify/retry calls can't both book it
+const claimOrder = async (orderId, paymentId) => {
+    const [result] = await db.execute(
+        `UPDATE bookings SET payment_id = ? WHERE order_id = ? AND status = 'pending' AND payment_id IS NULL`,
+        [paymentId, orderId]
+    );
+    return result.affectedRows === 1;
+};
+
+// Undo a claim when booking threw before a result was saved, so the guest can retry
+const releaseOrder = (orderId) => db.execute(
+    `UPDATE bookings SET payment_id = NULL WHERE order_id = ? AND status = 'pending'`,
+    [orderId]
+).catch(err => console.error('Failed to release order claim:', err.message));
+
+// Count a coupon use once its booking is confirmed (coupon code is kept on the Razorpay order)
+const recordCouponFromOrder = (orderId) => razorpay.orders.fetch(orderId)
+    .then(order => order.notes?.couponCode && adminController.recordCouponUse(order.notes.couponCode))
+    .catch(err => console.error('Failed to record coupon use:', err.message));
 
 /**
  * Create Razorpay order for hotel booking
@@ -68,6 +99,32 @@ exports.createOrder = async (req, res) => {
         console.log(`BookingCode: ${bookingCode}`);
         if (markupAmount) console.log(`Markup: ${markupPercentage}% = ₹${markupAmount}`);
 
+        // Never trust the amount from the browser: recompute prebook fare minus coupon
+        const fare = await hotelController.getPrebookFare(bookingCode);
+        if (!fare) {
+            return res.status(400).json({
+                error: 'Price check failed',
+                message: 'We could not confirm the room price. Please go back and select the room again.'
+            });
+        }
+        let couponDiscount = 0;
+        if (req.body.couponCode) {
+            const coupon = await adminController.computeCouponDiscount(req.body.couponCode, fare);
+            if (coupon.error) {
+                return res.status(400).json({ error: 'Coupon not applicable', message: coupon.error });
+            }
+            couponDiscount = coupon.discount;
+        }
+        const expectedAmount = Math.round((fare - couponDiscount) * 100) / 100;
+        // ₹1 tolerance for rounding differences between client and server
+        if (Number(amount) < expectedAmount - 1) {
+            console.error(`Amount mismatch for ${bookingCode}: got ${amount}, expected ${expectedAmount}`);
+            return res.status(400).json({
+                error: 'Price mismatch',
+                message: 'The price has changed. Please go back and review your booking.'
+            });
+        }
+
         // Create Razorpay order
         const orderOptions = {
             amount: Math.round(amount * 100), // Razorpay expects amount in paise
@@ -75,7 +132,8 @@ exports.createOrder = async (req, res) => {
             receipt: `hotel_${Date.now()}`,
             notes: {
                 bookingCode,
-                guestNationality
+                guestNationality,
+                couponCode: req.body.couponCode || ''
             }
         };
 
@@ -84,7 +142,8 @@ exports.createOrder = async (req, res) => {
 
         // Store pending booking in MySQL
         const bookingData = {
-            userId: req.body.userId || null,
+            // From the verified token, never the request body
+            userId: req.user?.uid || null,
             orderId: order.id,
             bookingCode,
             amount,
@@ -137,6 +196,7 @@ exports.createOrder = async (req, res) => {
  * Called after successful payment from frontend
  */
 exports.verifyPayment = async (req, res) => {
+    let claimedOrderId = null;
     try {
         const {
             razorpay_order_id,
@@ -157,12 +217,7 @@ exports.verifyPayment = async (req, res) => {
         console.log(`Payment ID: ${razorpay_payment_id}`);
 
         // Verify signature
-        const generatedSignature = crypto
-            .createHmac('sha256', config.razorpay.keySecret)
-            .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-            .digest('hex');
-
-        if (generatedSignature !== razorpay_signature) {
+        if (!isValidSignature(razorpay_order_id, razorpay_payment_id, razorpay_signature)) {
             console.error('Payment signature verification failed');
             return res.status(400).json({
                 error: 'Payment verification failed',
@@ -183,13 +238,14 @@ exports.verifyPayment = async (req, res) => {
             });
         }
 
-        if (pendingBooking.status !== 'pending') {
-            console.error('Booking is not in pending state');
+        if (pendingBooking.status !== 'pending' || !(await claimOrder(razorpay_order_id, razorpay_payment_id))) {
+            console.error('Booking is not in pending state or is already being processed');
             return res.status(400).json({
                 error: 'Invalid booking state',
                 message: 'This booking has already been processed'
             });
         }
+        claimedOrderId = razorpay_order_id;
 
         console.log('Retrieved pending booking from MySQL');
 
@@ -206,7 +262,8 @@ exports.verifyPayment = async (req, res) => {
         };
 
         console.log('Calling TBO Book API...');
-        console.log('Book Request:', JSON.stringify(bookRequest, null, 2));
+        // Guest names/contact details stay out of the logs
+        console.log(`Book Request: BookingCode=${bookRequest.BookingCode} NetAmount=${bookRequest.NetAmount} Rooms=${bookRequest.HotelRoomsDetails?.length || 0}`);
 
         // Call TBO Book API
         const axiosInstance = createSearchAxiosInstance();
@@ -254,6 +311,7 @@ exports.verifyPayment = async (req, res) => {
         });
 
         console.log('Booking status updated in MySQL');
+        if (isSuccess) recordCouponFromOrder(razorpay_order_id);
 
         // Handle different response scenarios
         if (!isSuccess) {
@@ -338,6 +396,7 @@ exports.verifyPayment = async (req, res) => {
     } catch (error) {
         console.error('\n=== Verify Payment Error ===');
         console.error('Error Message:', error.message);
+        if (claimedOrderId) releaseOrder(claimedOrderId);
 
         if (error.response) {
             console.error('TBO API Error:', JSON.stringify(error.response.data, null, 2));
@@ -439,6 +498,7 @@ exports.getBookingDetails = async (req, res) => {
  * Called when TBO returns price or cancellation policy changes
  */
 exports.retryBookingWithUpdatedPrice = async (req, res) => {
+    let claimedOrderId = null;
     try {
         const {
             orderId,
@@ -456,6 +516,14 @@ exports.retryBookingWithUpdatedPrice = async (req, res) => {
             });
         }
 
+        // Without this anyone could book on the agency balance with a made-up payment id
+        if (!isValidSignature(orderId, razorpay_payment_id, razorpay_signature)) {
+            return res.status(400).json({
+                error: 'Payment verification failed',
+                message: 'Invalid payment signature'
+            });
+        }
+
         console.log('\n=== Retrying Booking with Updated Price ===');
         console.log(`Order ID: ${orderId}`);
         console.log(`Updated Amount: ${updatedAmount}`);
@@ -463,7 +531,7 @@ exports.retryBookingWithUpdatedPrice = async (req, res) => {
         // Retrieve the booking
         const pendingBooking = await bookingService.getBookingData(orderId);
 
-        if (pendingBooking && pendingBooking.status !== 'pending') {
+        if (pendingBooking && (pendingBooking.status !== 'pending' || !(await claimOrder(orderId, razorpay_payment_id)))) {
             return res.json({
                 success: true,
                 message: 'Booking already processed or completed',
@@ -477,6 +545,7 @@ exports.retryBookingWithUpdatedPrice = async (req, res) => {
                 message: 'Booking data not found for this order'
             });
         }
+        claimedOrderId = orderId;
 
         // Update amount if provided
         if (updatedAmount) {
@@ -495,7 +564,7 @@ exports.retryBookingWithUpdatedPrice = async (req, res) => {
             IsPackageDetailsMandatory: pendingBooking.isPackageDetailsMandatory
         };
 
-        console.log('Retry Book Request:', JSON.stringify(bookRequest, null, 2));
+        console.log(`Retry Book Request: BookingCode=${bookRequest.BookingCode} NetAmount=${bookRequest.NetAmount} Rooms=${bookRequest.HotelRoomsDetails?.length || 0}`);
 
         // Call TBO Book API
         const axiosInstance = createSearchAxiosInstance();
@@ -545,6 +614,7 @@ exports.retryBookingWithUpdatedPrice = async (req, res) => {
         });
 
         console.log('Booking status updated in MySQL after retry');
+        if (isSuccess) recordCouponFromOrder(orderId);
 
         if (!isSuccess) {
             const errorMessage = bookResult.Error?.ErrorMessage || 'Booking failed';
@@ -627,6 +697,7 @@ exports.retryBookingWithUpdatedPrice = async (req, res) => {
     } catch (error) {
         console.error('\n=== Retry Booking Error ===');
         console.error('Error Message:', error.message);
+        if (claimedOrderId) releaseOrder(claimedOrderId);
 
         if (error.response) {
             console.error('TBO API Error:', JSON.stringify(error.response.data, null, 2));

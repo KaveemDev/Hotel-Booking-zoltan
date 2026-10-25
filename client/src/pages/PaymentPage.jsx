@@ -545,7 +545,9 @@ const PaymentPage = () => {
         try {
             const bookingData = {
                 BookingId: verifyResponse.bookingId,
-                EndUserIp: '127.0.0.1'
+                EndUserIp: '127.0.0.1',
+                // Lets the server confirm this guest owns the booking
+                orderId: razorpayResponse?.razorpay_order_id
             };
 
             const statusResponse = await fetchTboBookingDetails(bookingData);

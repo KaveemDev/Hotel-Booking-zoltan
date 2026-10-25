@@ -21,7 +21,7 @@ const HotelDetailsPage = () => {
     const [activeTab, setActiveTab] = useState('overview');
     const [isSticky, setIsSticky] = useState(false);
     const [expandedRoom, setExpandedRoom] = useState(null);
-    const [dataSource, setDataSource] = useState(null); // Track where data came from
+    const [, setDataSource] = useState(null); // Track where data came from
     const [showGallery, setShowGallery] = useState(false);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [roomImageIndices, setRoomImageIndices] = useState({});
@@ -226,6 +226,7 @@ const HotelDetailsPage = () => {
         };
 
         loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, [hotelId]);
 
     const scrollToSection = (id) => {
@@ -571,7 +572,7 @@ const HotelDetailsPage = () => {
                             <img
                                 src={images[idx] || `https://via.placeholder.com/400x300?text=Photo+${idx + 1}`}
                                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                                alt={`Hotel photo ${idx + 1}`}
+                                alt={`${hotel?.HotelName || "Hotel"} ${idx + 1}`}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
 
@@ -720,7 +721,7 @@ const HotelDetailsPage = () => {
                         <div className="max-w-5xl w-full h-full flex items-center justify-center">
                             <img
                                 src={images[currentImageIndex]}
-                                alt={`Photo ${currentImageIndex + 1}`}
+                                alt={`${hotel?.HotelName || "Hotel"} ${currentImageIndex + 1} of ${images.length}`}
                                 className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-2xl"
                             />
                         </div>
@@ -913,7 +914,7 @@ const HotelDetailsPage = () => {
                                                                     <>
                                                                         <img
                                                                             src={roomImages[currentIdx] || roomImages[0]}
-                                                                            alt={`${room.RoomName} - Photo ${currentIdx + 1}`}
+                                                                            alt={`${room.RoomName} ${currentIdx + 1}`}
                                                                             className="w-full h-full object-cover"
                                                                         />
                                                                         {hasMultiple && (
@@ -1147,6 +1148,7 @@ const HotelDetailsPage = () => {
                         {hotel.Map && (
                             <div className="mb-6 h-64 bg-gray-100 rounded-lg overflow-hidden">
                                 <iframe
+                                    title={`Map showing ${hotel.HotelName || "the hotel"}`}
                                     src={`https://www.google.com/maps?q=${hotel.Map.replace('|', ',')}&output=embed`}
                                     width="100%"
                                     height="100%"

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ref, onValue } from 'firebase/database';
-import { database } from '../config/firebase';
-import { sendChatMessage, toggleChatPin, markChatAsRead, cleanupOldChats, getChatConversations } from '../services/api';
-import { Search, Pin, PinOff, Send, Trash2, MessageCircle, User, ArrowLeft, RefreshCw } from 'lucide-react';
+import { getDatabase, ref, onValue } from 'firebase/database';
+import { app } from '../config/firebase';
+import { sendChatMessage, toggleChatPin, markChatAsRead, cleanupOldChats } from '../services/api';
+import { Search, Pin, PinOff, Send, Trash2, MessageCircle, ArrowLeft } from 'lucide-react';
+
+const database = getDatabase(app);
 
 const AdminChatSection = ({ currentUser, userData }) => {
     const [conversations, setConversations] = useState([]);

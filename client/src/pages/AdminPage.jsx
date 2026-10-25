@@ -3,9 +3,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
     LayoutDashboard, Users, ShoppingBag, Wallet, LogOut, Home, Search,
-    TrendingUp, TrendingDown, DollarSign, Calendar, Hotel, XCircle, CheckCircle,
+    TrendingUp, TrendingDown, DollarSign, Hotel, XCircle, CheckCircle,
     Clock, AlertTriangle, BarChart3, PieChart, Activity, RefreshCw, Menu, X,
-    Eye, Ban, CreditCard, MapPin, Moon, BedDouble, Percent, ArrowUpRight, Tag, Trash2, Plus, ToggleLeft, ToggleRight,
+    Eye, Ban, CreditCard, MapPin, Moon, Percent, ArrowUpRight, Tag, Trash2, Plus, ToggleLeft, ToggleRight,
     MessageCircle
 } from 'lucide-react';
 import {
@@ -319,7 +319,6 @@ const AdminPage = () => {
     });
 
     // Chart colors
-    const CHART_COLORS = ['#22c55e', '#f59e0b', '#ef4444', '#6366f1', '#06b6d4'];
     const PIE_COLORS = ['#22c55e', '#f59e0b', '#ef4444', '#6b7280'];
 
     if (loading) {

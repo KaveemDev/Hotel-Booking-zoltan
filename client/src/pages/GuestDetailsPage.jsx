@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-    MapPin, Star, Calendar, Users, User, Mail, Phone, Globe,
+    MapPin, Star, Calendar, Users, User, Mail, Globe,
     CreditCard, Shield, AlertCircle, Check, ChevronRight, Clock,
     X, Info, ArrowLeft, Coffee, Wifi, Car, Utensils, Tv, Wind,
     Bath, Sparkles, Tag, FileText, AlertTriangle
 } from 'lucide-react';
-import { preBookHotel, bookHotel } from '../services/api';
+import { preBookHotel } from '../services/api';
 import ErrorAlert from '../components/ErrorAlert';
 
 // Country codes for nationality dropdown
@@ -45,12 +45,11 @@ const GuestDetailsPage = () => {
     const [error, setError] = useState(null);
     const [priceNotice, setPriceNotice] = useState(null);
     const [submitting, setSubmitting] = useState(false);
-    const [bookingSuccess, setBookingSuccess] = useState(false);
-    const [bookingResponse, setBookingResponse] = useState(null);
-    const [validationInfo, setValidationInfo] = useState(null);
+    const [bookingSuccess] = useState(false);
+    const [, setValidationInfo] = useState(null);
     const [showAllAmenities, setShowAllAmenities] = useState(false);
     const [showRateConditions, setShowRateConditions] = useState(false);
-    const [isVoucherBooking, setIsVoucherBooking] = useState(true); // Default to voucher booking
+    const [isVoucherBooking] = useState(true); // Default to voucher booking
 
     // Form state
     const [contactDetails, setContactDetails] = useState({
@@ -224,6 +223,7 @@ const GuestDetailsPage = () => {
         };
 
         fetchPreBookData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, [initialBookingCode]);
 
     // Get validation limits from API response
@@ -1282,9 +1282,9 @@ const GuestDetailsPage = () => {
                                     className="mt-1 w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                 />
                                 <span className="text-sm text-gray-700">
-                                    I have read and agree to the <a href="#" className="text-blue-600 hover:underline">Terms and Conditions</a>,{' '}
-                                    <a href="#" className="text-blue-600 hover:underline">Privacy Policy</a>, and{' '}
-                                    <a href="#" className="text-blue-600 hover:underline">Cancellation Policy</a>.
+                                    I have read and agree to the <span className="font-medium">Terms and Conditions</span>,{' '}
+                                    <span className="font-medium">Privacy Policy</span>, and{' '}
+                                    <a href="/cancellation" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Cancellation Policy</a>.
                                 </span>
                             </label>
                             {errors.terms && (

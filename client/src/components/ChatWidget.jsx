@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ref, onValue } from 'firebase/database';
-import { database } from '../config/firebase';
+import { getDatabase, ref, onValue } from 'firebase/database';
+import { app } from '../config/firebase';
 import { sendChatMessage } from '../services/api';
-import { MessageCircle, X, Send, ChevronDown } from 'lucide-react';
+import { MessageCircle, X, Send } from 'lucide-react';
+
+const database = getDatabase(app);
 
 const ChatWidget = () => {
-    const { currentUser, userData, isAdmin } = useAuth();
+    const { currentUser, userData, isAdmin, loading } = useAuth();
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
@@ -19,7 +21,7 @@ const ChatWidget = () => {
 
     // Listen for messages in real-time
     useEffect(() => {
-        if (!chatId || isAdmin) return;
+        if (!chatId || isAdmin || loading) return;
         const messagesRef = ref(database, `supportChats/${chatId}/messages`);
         const unsubscribe = onValue(messagesRef, (snapshot) => {
             const data = snapshot.val();
@@ -39,7 +41,7 @@ const ChatWidget = () => {
             }
         });
         return () => unsubscribe();
-    }, [chatId, isAdmin, isOpen]);
+    }, [chatId, isAdmin, isOpen, loading]);
 
     // Scroll to bottom when messages change or chat opens
     useEffect(() => {
@@ -55,8 +57,8 @@ const ChatWidget = () => {
         }
     }, [isOpen]);
 
-    // Don't render for admin users or unauthenticated users
-    if (!currentUser || isAdmin) return null;
+    // Don't render for admin users or unauthenticated users (or before the role is known)
+    if (!currentUser || isAdmin || loading) return null;
 
     const handleOpen = () => {
         setIsOpen(true);

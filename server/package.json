@@ -1,5 +1,5 @@
 {
-  "name": "tbo-hotels-server",
+  "name": "zovotel-server",
   "version": "1.0.0",
   "description": "Proxy server for TBO Hotels API",
   "main": "server.js",

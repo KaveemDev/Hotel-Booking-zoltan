@@ -1,6 +1,6 @@
-# TBO Hotels Proxy Server
+# Zovotel - Hotel Booking Platform
 
-Node.js Express server that acts as a proxy for TBO Hotels API to avoid CORS issues.
+Full-stack hotel search and booking platform powered by TBO Hotels API and Razorpay.
 
 ## Setup Instructions
 

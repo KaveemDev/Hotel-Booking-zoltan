@@ -1,6 +1,6 @@
 {
-  "name": "zovotel",
-  "short_name": "zovotel",
+  "name": "Zovotel – Book Hotels",
+  "short_name": "Zovotel",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
@@ -15,7 +15,8 @@
       "purpose": "maskable"
     }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
+  "start_url": "/",
+  "theme_color": "#0f0c29",
+  "background_color": "#0f0c29",
   "display": "standalone"
 }

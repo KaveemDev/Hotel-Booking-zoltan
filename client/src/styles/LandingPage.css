@@ -2,8 +2,7 @@
    LANDING PAGE — ANIMATIONS & STYLES
    ============================================ */
 
-/* ---------- Google Font ---------- */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* Inter is loaded once in public/index.html (a CSS @import here blocked rendering) */
 
 .landing-page {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -1214,6 +1213,7 @@
     font-size: 0.8125rem;
     font-weight: 600;
     text-decoration: none;
+    white-space: nowrap; /* "Sign Up" wrapped onto two lines on phones */
     transition: background 0.2s, transform 0.15s;
     cursor: pointer;
 }

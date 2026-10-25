@@ -1,27 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import HomePage from './pages/HomePage';
 import LandingPage from './pages/LandingPage';
-import HotelDetailsPage from './pages/HotelDetailsPage';
-import GuestDetailsPage from './pages/GuestDetailsPage';
-import PaymentPage from './pages/PaymentPage';
-import SignUpPage from './pages/SignUpPage';
-import SignInPage from './pages/SignInPage';
-import AdminPage from './pages/AdminPage';
-import ProfilePage from './pages/ProfilePage';
 import ProtectedRoute from './components/ProtectedRoute';
 import DirectAccessGuard from './components/DirectAccessGuard';
-import HelpCenterPage from './pages/HelpCenterPage';
-import ContactUsPage from './pages/ContactUsPage';
-import CancellationPage from './pages/CancellationPage';
-import SafetyPage from './pages/SafetyPage';
-import AboutUsPage from './pages/AboutUsPage';
-import ChatWidget from './components/ChatWidget';
-import { Hotel, LogOut, Shield, Heart, HelpCircle, User, Sun, Moon, Menu, X, Calendar } from 'lucide-react';
+import { LogOut, Shield, Heart, HelpCircle, User, Sun, Moon, Menu, X, Calendar } from 'lucide-react';
 import './styles/Auth.css';
 import logo from './assets/logo.png';
+
+// Landing page ships in the main bundle; every other page loads when first visited
+const HomePage = lazy(() => import('./pages/HomePage'));
+const HotelDetailsPage = lazy(() => import('./pages/HotelDetailsPage'));
+const GuestDetailsPage = lazy(() => import('./pages/GuestDetailsPage'));
+const PaymentPage = lazy(() => import('./pages/PaymentPage'));
+const SignUpPage = lazy(() => import('./pages/SignUpPage'));
+const SignInPage = lazy(() => import('./pages/SignInPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const HelpCenterPage = lazy(() => import('./pages/HelpCenterPage'));
+const ContactUsPage = lazy(() => import('./pages/ContactUsPage'));
+const CancellationPage = lazy(() => import('./pages/CancellationPage'));
+const SafetyPage = lazy(() => import('./pages/SafetyPage'));
+const AboutUsPage = lazy(() => import('./pages/AboutUsPage'));
+// Chat pulls in the Firebase Realtime Database SDK, so keep it out of the first load too
+const ChatWidget = lazy(() => import('./components/ChatWidget'));
+
+const PageFallback = () => (
+  <div className="min-h-screen flex items-center justify-center bg-white dark:bg-slate-900" role="status" aria-label="Loading">
+    <div className="h-10 w-10 rounded-full border-4 border-blue-200 border-t-blue-600 animate-spin" />
+  </div>
+);
 
 // Navigation Header Component
 const NavHeader = () => {
@@ -159,7 +168,9 @@ const Layout = ({ children, showNav = true }) => {
   return (
     <div className="min-h-screen bg-white dark:bg-slate-900 theme-transition">
       {showNav && <NavHeader />}
-      <main style={{ paddingTop: showNav ? '70px' : '0' }}>{children}</main>
+      <main style={{ paddingTop: showNav ? '70px' : '0' }}>
+        <Suspense fallback={<PageFallback />}>{children}</Suspense>
+      </main>
     </div>
   );
 };
@@ -289,8 +300,12 @@ function App() {
     <Router>
       <ThemeProvider>
         <AuthProvider>
-          <AppRoutes />
-          <ChatWidget />
+          <Suspense fallback={<PageFallback />}>
+            <AppRoutes />
+          </Suspense>
+          <Suspense fallback={null}>
+            <ChatWidget />
+          </Suspense>
         </AuthProvider>
       </ThemeProvider>
     </Router>

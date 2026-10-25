@@ -6,7 +6,6 @@ import { useAuth } from '../context/AuthContext';
 const HotelCard = ({ hotel, onSelect, index = 0 }) => {
   const navigate = useNavigate();
   const { currentUser, isHotelLiked, likeHotel, unlikeHotel } = useAuth();
-  const [isHovered, setIsHovered] = useState(false);
   const [likeLoading, setLikeLoading] = useState(false);
   const [justLiked, setJustLiked] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -39,7 +38,6 @@ const HotelCard = ({ hotel, onSelect, index = 0 }) => {
   const stars = parseStars(hotel.StarRating || hotel.stars);
   const location = getVal(hotel.HotelAddress || hotel.location);
   const description = getVal(hotel.HotelDescription || hotel.description, "");
-  const distance = getVal(hotel.distance, "Distance NA");
   const rating = getVal(hotel.Rating || hotel.rating);
   const ratingText = getVal(hotel.ratingText, "Rating NA");
   const reviews = getVal(hotel.reviews, "0");
@@ -56,7 +54,6 @@ const HotelCard = ({ hotel, onSelect, index = 0 }) => {
   // Price handling
   // API structure: hotel.Rooms[0].TotalFare (includes tax)
   const totalFare = roomData.RSP || roomData.TotalFare || roomData.DayRates?.[0]?.[0]?.BasePrice;
-  const totalTax = roomData.TotalTax || 0;
   const basePrice = totalFare ? totalFare : null;
   const originalPrice = basePrice ? Math.round(basePrice) : "NA";
 
@@ -84,8 +81,6 @@ const HotelCard = ({ hotel, onSelect, index = 0 }) => {
   };
   const mealPlan = getVal(getMealTypeLabel(roomData.MealType), "Meal Plan NA");
 
-  const tax = roomData.TotalTax ? Math.round(roomData.TotalTax) : "NA";
-
   // Calculate animation delay based on index for staggered effect
   const animationDelay = Math.min(index * 30, 150);
 
@@ -93,8 +88,6 @@ const HotelCard = ({ hotel, onSelect, index = 0 }) => {
     <div
       className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm hover:shadow-2xl dark:hover:shadow-slate-700/50 transition-all duration-300 ease-out flex flex-col md:flex-row overflow-hidden cursor-pointer group mb-4 animate-fade-in-up hover:-translate-y-1 theme-transition box-border"
       style={{ animationDelay: `${animationDelay}ms`, animationFillMode: 'both', maxWidth: '100%', width: '100%' }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       onClick={() => onSelect && onSelect(hotel)}
     >
       {/* Image Section */}
@@ -109,6 +102,8 @@ const HotelCard = ({ hotel, onSelect, index = 0 }) => {
           <img
             src={image}
             alt={name}
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
             onError={() => setImageError(true)}
           />
@@ -238,8 +233,8 @@ const HotelCard = ({ hotel, onSelect, index = 0 }) => {
           {/* Rating Badge */}
           <div className="flex items-center justify-between md:justify-end mb-4">
             <div className="text-right mr-2">
-              <div className="text-sm font-bold text-gray-800">{ratingText}</div>
-              <div className="text-xs text-gray-500">{reviews} reviews</div>
+              <div className="text-sm font-bold text-gray-800 dark:text-white">{ratingText}</div>
+              <div className="text-xs text-gray-500 dark:text-slate-400">{reviews} reviews</div>
             </div>
             <div className="bg-blue-600 text-white font-bold text-lg p-2 rounded-lg shadow-sm flex items-center justify-center w-10 h-10">
               {rating !== "NA" ? rating : "-"}
@@ -260,10 +255,10 @@ const HotelCard = ({ hotel, onSelect, index = 0 }) => {
               </div>
             )}
 
-            <div className="text-2xl md:text-3xl font-bold text-gray-800 leading-none">
+            <div className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white leading-none">
               {finalPrice !== "NA" ? `₹ ${finalPrice}` : "Price NA"}
             </div>
-            <div className="text-xs text-gray-500 mt-1">
+            <div className="text-xs text-gray-500 dark:text-slate-400 mt-1">
               {finalPrice !== "NA" ? "Includes taxes & fees" : "Taxes & fees NA"}
             </div>
 

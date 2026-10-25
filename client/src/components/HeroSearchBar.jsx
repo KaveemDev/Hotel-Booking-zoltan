@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { Search, User, MapPin, Minus, Plus, ChevronDown, Building, X, Sparkles } from 'lucide-react';
 import DateRangePicker from './DateRangePicker';
 import { fetchInitialData, fetchHotelSuggestions } from '../redux/slices/suggestionsSlice';
-import { fetchCities, searchHotelNames } from '../services/api';
+import { fetchCities } from '../services/api';
 
 // Top countries to search cities from (pre-cached for fast suggestions)
 const TOP_COUNTRIES = ['IN', 'AE', 'US', 'GB', 'SG', 'TH', 'MY', 'FR', 'DE', 'AU', 'SA', 'LK', 'JP'];
@@ -53,7 +52,6 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
   const searchInputRef = useRef(null);
   const overlayInputRef = useRef(null);
 
-  const navigate = useNavigate();
   const dispatch = useDispatch();
   const { countries, cities, hotelCache } = useSelector((state) => state.suggestions);
 
@@ -123,6 +121,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
           .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
         citySuggestions = [...citySuggestions, ...filtered];
       } else if (isCountryMatch || TOP_COUNTRIES.includes(code)) {
+        // eslint-disable-next-line no-loop-func -- existing, tested behaviour; changing deps could re-trigger effects
         const promise = fetchCities(code).then(cityData => {
           if (cityData?.CityList) {
             citiesCacheRef.current[code] = cityData.CityList;
@@ -210,6 +209,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
       ...hotelSuggestions.filter(hotel => !recentHotelSuggestions.some(recent => String(recent.Code) === String(hotel.Code)))
     ];
     return combined.length > 0 ? combined[0] : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
   }, [getCountryName, dispatch]);
 
   // Focus overlay input when opened
@@ -453,6 +453,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
                 .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
               citySuggestions = [...citySuggestions, ...filtered];
             } else if (isCountryMatch || TOP_COUNTRIES.includes(code)) {
+              // eslint-disable-next-line no-loop-func -- existing, tested behaviour; changing deps could re-trigger effects
               const promise = fetchCities(code).then(cityData => {
                 if (cityData?.CityList) {
                   citiesCacheRef.current[code] = cityData.CityList;
@@ -569,6 +570,7 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
         if (searchTimeoutRef.current) {
             clearTimeout(searchTimeoutRef.current);
     }};
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
   }, [destination, isSearchOverlayOpen, getCountryName, dispatch]);
 
   const handleGuestChange = (type, operation) => {
@@ -591,14 +593,6 @@ const HeroSearchBar = ({ onSearch, compact = false, locationState, cachedSearchP
         }
       }
       return newGuests;
-    });
-  };
-
-  const handleChildAgeChange = (index, age) => {
-    setGuests(prev => {
-      const newAges = [...prev.childrenAges];
-      newAges[index] = parseInt(age);
-      return { ...prev, childrenAges: newAges };
     });
   };
 

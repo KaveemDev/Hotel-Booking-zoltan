@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Star, X, Filter, MapPin, Search, Loader2 } from 'lucide-react';
 
 const FilterSection = ({ title, children, isOpen, onToggle }) => (

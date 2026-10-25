@@ -22,19 +22,24 @@ export const fetchHotelCardInfoData = createAsyncThunk(
   'staticData/fetchHotelCardInfoData',
   async (hotelCodes, { getState }) => {
     const state = getState().staticData;
-    
+    // Info we already hold for the requested codes, so callers can enrich without reading the store
+    const known = {};
+    hotelCodes.forEach(code => {
+      if (state.hotelCardInfo[String(code)]) known[String(code)] = state.hotelCardInfo[String(code)];
+    });
+
     // Find which codes we don't have yet
     const missingCodes = hotelCodes.filter(code => !state.hotelCardInfo[String(code)]);
-    
+
     if (missingCodes.length === 0) {
-      return { newInfo: {}, cached: true };
+      return { newInfo: {}, info: known, cached: true };
     }
 
     const response = await fetchHotelCardInfo(missingCodes);
     if (response && response.hotelInfo) {
-      return { newInfo: response.hotelInfo, cached: false };
+      return { newInfo: response.hotelInfo, info: { ...known, ...response.hotelInfo }, cached: false };
     }
-    return { newInfo: {}, cached: false };
+    return { newInfo: {}, info: known, cached: false };
   }
 );
 

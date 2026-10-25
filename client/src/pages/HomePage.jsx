@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useDispatch as useReduxDispatch, useSelector } from 'react-redux';
+import { useDispatch as useReduxDispatch } from 'react-redux';
 import HeroSearchBar from '../components/HeroSearchBar';
 import FilterSidebar from '../components/FilterSidebar';
 import HotelCard from '../components/HotelCard';
@@ -11,6 +11,8 @@ import { useAppContext } from '../context/AppContext';
 import { setInternalNavigation } from '../components/DirectAccessGuard';
 
 const CHUNK_SIZE = 100; // Number of hotel codes per API request
+const CARD_INFO_GROUP_SIZE = 20; // Hotels per image/rating request
+const RENDER_PAGE_SIZE = 20; // Cards added to the DOM per scroll step
 
 // Helper to parse StarRating from string like "FourStar" to number
 const parseStarRating = (rating) => {
@@ -32,7 +34,6 @@ const parseStarRating = (rating) => {
 function HomePage() {
     const { state: appState, dispatch } = useAppContext();
     const reduxDispatch = useReduxDispatch();
-    const { cityHotels, hotelCardInfo } = useSelector(state => state.staticData);
     const cachedSearch = appState.searchCache;
 
     const [hotels, setHotels] = useState(cachedSearch?.hotels || []);
@@ -47,9 +48,15 @@ function HomePage() {
     const [hasMore, setHasMore] = useState(cachedSearch?.hasMore ?? true);
     const [searchParams, setSearchParams] = useState(cachedSearch?.searchParams || null);
     const [currentStaticMap, setCurrentStaticMap] = useState(cachedSearch?.currentStaticMap || {});
+    // Search chunks still in flight, so the header can say results are still arriving
+    const [pendingChunks, setPendingChunks] = useState(0);
+    // Only this many cards are mounted; the sentinel grows it as the user scrolls
+    const [visibleCount, setVisibleCount] = useState(cachedSearch?.visibleCount || RENDER_PAGE_SIZE);
 
     // Ref to track if the loading spinner has already been dismissed
     const loadingDismissedRef = useRef(false);
+    // Bumped on every new search so late chunks from an older search are dropped
+    const searchIdRef = useRef(0);
 
     // Ref for infinite scroll sentinel
     const sentinelRef = useRef(null);
@@ -76,11 +83,13 @@ function HomePage() {
                     currentStaticMap,
                     hasSearched,
                     filters,
-                    sortBy
+                    sortBy,
+                    visibleCount
                 }
             });
         }
-    }, [hotels, searchParams, allHotelCodes, currentPage, hasMore, hasSearched]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- filters/sortBy are snapshotted, saving on each change isn't needed
+    }, [hotels, searchParams, allHotelCodes, currentPage, hasMore, hasSearched, visibleCount]);
 
     // Compute dynamic filter options from hotels
     const filterOptions = useMemo(() => {
@@ -274,7 +283,9 @@ function HomePage() {
             })
         };
 
+        const searchId = searchIdRef.current;
         const data = await searchHotels(payload);
+        if (searchId !== searchIdRef.current) return [];
 
         if (data.HotelResult && data.HotelResult.length > 0) {
             // Extract hotel codes from search results to fetch card info
@@ -317,48 +328,57 @@ function HomePage() {
                 setLoading(false);
             }
 
-            // Step 2: Fetch card info (images, amenities, ratings) and enrich in the background
+            // Step 2: Fetch card info (images, amenities, ratings) in small groups so each
+            // group's images appear as soon as it returns instead of after the whole chunk
             if (resultHotelCodes.length > 0) {
-                try {
-                    const payload = await reduxDispatch(fetchHotelCardInfoData(resultHotelCodes)).unwrap();
-                    // We need to use the combined state from Redux, but since it might not be updated in the component closure yet,
-                    // we'll get it directly from the store if possible, or just merge the new payload
-                    const newInfo = payload.newInfo || {};
-                    // Since we can't easily access the full Redux state from this closure without adding it to dependencies (which causes infinite loops),
-                    // we will just enrich with the newInfo we got, or rely on a `useEffect` to do the enrichment.
-                    // Let's enrich with `newInfo` and any existing `hotelCardInfo` from the component closure.
-                    
-                    setHotels(prev => prev.map(hotel => {
-                        const cachedInfo = newInfo[String(hotel.HotelCode)] || hotelCardInfo[String(hotel.HotelCode)];
-                        if (!cachedInfo) return hotel;
-                        return {
-                            ...hotel,
-                            HotelPicture: cachedInfo.imageUrl || hotel.HotelPicture,
-                            HotelDescription: cachedInfo.description || hotel.HotelDescription,
-                            Facilities: cachedInfo.amenities?.length > 0 ? cachedInfo.amenities : hotel.Facilities,
-                            Rating: cachedInfo.rating || hotel.Rating,
-                            reviews: cachedInfo.reviews || hotel.reviews,
-                            ratingText: cachedInfo.ratingText || hotel.ratingText,
-                        };
-                    }));
-                } catch (infoError) {
-                    console.error('Failed to fetch hotel card info:', infoError);
+                const groups = [];
+                for (let i = 0; i < resultHotelCodes.length; i += CARD_INFO_GROUP_SIZE) {
+                    groups.push(resultHotelCodes.slice(i, i + CARD_INFO_GROUP_SIZE));
                 }
+                // Not awaited: the chunk counts as done once its hotels are on screen
+                Promise.all(groups.map(async (group) => {
+                    try {
+                        const payload = await reduxDispatch(fetchHotelCardInfoData(group)).unwrap();
+                        const info = payload.info || {};
+                        if (Object.keys(info).length === 0) return;
+
+                        setHotels(prev => prev.map(hotel => {
+                            const cachedInfo = info[String(hotel.HotelCode)];
+                            if (!cachedInfo) return hotel;
+                            return {
+                                ...hotel,
+                                HotelPicture: cachedInfo.imageUrl || hotel.HotelPicture,
+                                HotelDescription: cachedInfo.description || hotel.HotelDescription,
+                                Facilities: cachedInfo.amenities?.length > 0 ? cachedInfo.amenities : hotel.Facilities,
+                                Rating: cachedInfo.rating || hotel.Rating,
+                                reviews: cachedInfo.reviews || hotel.reviews,
+                                ratingText: cachedInfo.ratingText || hotel.ratingText,
+                            };
+                        }));
+                    } catch (infoError) {
+                        console.error('Failed to fetch hotel card info:', infoError);
+                    }
+                }));
             }
 
             return partialMerged;
         }
         return [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, []);
 
     // Initial search handler
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     const handleSearch = async (searchData) => {
         // console.log('Search Data:', searchData);
         setLoading(true);
+        const searchId = ++searchIdRef.current;
+        setPendingChunks(0);
         loadingDismissedRef.current = false; // Reset the flag for the new search
         setHasSearched(true);
         setError(null);
         setHotels([]);
+        setVisibleCount(RENDER_PAGE_SIZE);
         setCurrentPage(0);
         setHasMore(true);
         setIsPriceCustomized(false);
@@ -411,6 +431,7 @@ function HomePage() {
                 setHasMore(false); // Only one hotel, no pagination needed
 
                 const results = await searchHotelChunk(hotelCodesList, searchData, staticMap, false);
+                if (searchId !== searchIdRef.current) return;
 
                 if (!results || results.length === 0) {
                     setError(`No rooms available for "${searchData.destination}" on the selected dates. Try different dates.`);
@@ -434,6 +455,7 @@ function HomePage() {
                 } catch (err) {
                     console.error('Failed to fetch hotel list for city:', err);
                 }
+                if (searchId !== searchIdRef.current) return;
 
                 if (hotelCodesList.length === 0) {
                     setError('No hotels found for this city.');
@@ -455,16 +477,20 @@ function HomePage() {
                     // Fire all chunk requests in parallel.
                     // Each chunk dismisses the loading spinner itself (via loadingDismissedRef)
                     // the moment it appends results to state — no need to wait for all.
+                    setPendingChunks(frontendChunks.length);
                     const promises = frontendChunks.map(chunk =>
                         searchHotelChunk(chunk, searchData, staticMap, true).catch(err => {
                             console.error('Chunk search error:', err);
                             return [];
+                        }).finally(() => {
+                            if (searchId === searchIdRef.current) setPendingChunks(n => Math.max(0, n - 1));
                         })
                     );
 
                     // Await all chunks so `finally` doesn't run prematurely.
                     // The spinner is already gone (dismissed by the first successful chunk).
                     const allResults = await Promise.all(promises);
+                    if (searchId !== searchIdRef.current) return;
                     setHasMore(false);
 
                     // If every chunk came back empty, show a message
@@ -483,10 +509,10 @@ function HomePage() {
 
         } catch (err) {
             console.error('Search failed:', err);
-            setError('Failed to fetch hotels. Please try again.');
+            if (searchId === searchIdRef.current) setError('Failed to fetch hotels. Please try again.');
         } finally {
             // Safety net: dismiss loading if no chunk ever did (e.g. all errored)
-            if (!loadingDismissedRef.current) {
+            if (searchId === searchIdRef.current && !loadingDismissedRef.current) {
                 loadingDismissedRef.current = true;
                 setLoading(false);
             }
@@ -528,29 +554,12 @@ function HomePage() {
         }
     }, [loadingMore, hasMore, searchParams, allHotelCodes, currentPage, currentStaticMap, searchHotelChunk]);
 
-    // IntersectionObserver for infinite scroll
-    useEffect(() => {
-        if (!sentinelRef.current) return;
-
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
-                    loadMoreHotels();
-                }
-            },
-            { threshold: 0.1 }
-        );
-
-        observer.observe(sentinelRef.current);
-
-        return () => observer.disconnect();
-    }, [hasMore, loading, loadingMore, loadMoreHotels]);
-
     const handleFilterChange = (newFilters) => {
         if (newFilters.priceRange) {
             const isDefault = newFilters.priceRange.min === 0 && newFilters.priceRange.max >= priceBounds.max;
             setIsPriceCustomized(!isDefault);
         }
+        setVisibleCount(RENDER_PAGE_SIZE);
         setFilters(newFilters);
         // console.log('Filters:', newFilters);
     };
@@ -623,7 +632,7 @@ function HomePage() {
                     const priceB = b.Rooms?.[0]?.RSP || b.Rooms?.[0]?.TotalFare || b.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
                     return priceA - priceB;
                 });
-            case 'price_desc':
+            case 'priceHighLow':
                 return sorted.sort((a, b) => {
                     const priceA = a.Rooms?.[0]?.RSP || a.Rooms?.[0]?.TotalFare || a.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
                     const priceB = b.Rooms?.[0]?.RSP || b.Rooms?.[0]?.TotalFare || b.Rooms?.[0]?.DayRates?.[0]?.[0]?.BasePrice || 0;
@@ -644,6 +653,28 @@ function HomePage() {
                 return sorted; // Keep original API order
         }
     }, [filteredHotels, sortBy]);
+
+    // IntersectionObserver for infinite scroll: mount more of the loaded cards first,
+    // then fetch the next chunk when everything loaded is already on screen
+    useEffect(() => {
+        if (!sentinelRef.current) return;
+
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (!entries[0].isIntersecting || loading) return;
+                if (visibleCount < sortedHotels.length) {
+                    setVisibleCount(c => c + RENDER_PAGE_SIZE);
+                } else if (hasMore && !loadingMore) {
+                    loadMoreHotels();
+                }
+            },
+            { rootMargin: '600px 0px' }
+        );
+
+        observer.observe(sentinelRef.current);
+
+        return () => observer.disconnect();
+    }, [hasMore, loading, loadingMore, loadMoreHotels, visibleCount, sortedHotels.length]);
 
     // Handle searching hotel from FilterSidebar
     const handleSearchHotelFromFilter = useCallback(async (hotelOrQuery) => {
@@ -782,7 +813,6 @@ function HomePage() {
 
     // Calculate loaded/total counts for display
     const loadedCount = hotels.length;
-    const totalCount = allHotelCodes.length;
 
     return (
         <div className="min-h-screen bg-gray-100 dark:bg-slate-900 theme-transition">
@@ -812,17 +842,18 @@ function HomePage() {
                     <div className="flex-1 min-w-0 max-w-full overflow-hidden">
                         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-4 mb-4 flex flex-wrap justify-between items-center gap-4 theme-transition">
                             <h2 className="text-xl font-bold text-gray-800 dark:text-white">
-                                {loading ? 'Searching...' :
-                                    totalCount > 0
-                                        ? `Showing ${sortedHotels.length} properties`
-                                        : `Showing ${sortedHotels.length} properties`
-                                }
+                                {loading ? 'Searching...' : `Showing ${sortedHotels.length} properties`}
+                                {!loading && pendingChunks > 0 && (
+                                    <span className="ml-2 text-sm font-medium text-blue-600 dark:text-blue-400 animate-pulse">
+                                        · finding more…
+                                    </span>
+                                )}
                             </h2>
                             <div className="flex items-center gap-2">
                                 <span className="text-gray-600 dark:text-slate-400 text-sm">Sort by:</span>
                                 <select
                                     value={sortBy}
-                                    onChange={(e) => setSortBy(e.target.value)}
+                                    onChange={(e) => { setVisibleCount(RENDER_PAGE_SIZE); setSortBy(e.target.value); }}
                                     className="border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 dark:text-slate-200 bg-white dark:bg-slate-700 hover:border-blue-500 dark:hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer transition-all"
                                 >
                                     <option value="bestMatch">Best Match</option>
@@ -858,7 +889,7 @@ function HomePage() {
                         )}
 
                         {/* Hotel Cards with staggered animation */}
-                        {sortedHotels.map((hotel, index) => (
+                        {sortedHotels.slice(0, visibleCount).map((hotel, index) => (
                             <HotelCard
                                 key={hotel.HotelCode || index}
                                 hotel={hotel}
@@ -885,9 +916,9 @@ function HomePage() {
                         )}
 
                         {/* End of Results - Enhanced */}
-                        {!loading && !hasMore && hotels.length > 0 && (
-                            <div className="text-center py-6 text-gray-500 border-t border-gray-200 mt-4 animate-fade-in">
-                                <div className="inline-flex items-center gap-2 bg-gray-100 px-4 py-2 rounded-full">
+                        {!loading && !hasMore && pendingChunks === 0 && hotels.length > 0 && visibleCount >= sortedHotels.length && (
+                            <div className="text-center py-6 text-gray-500 dark:text-slate-400 border-t border-gray-200 dark:border-slate-700 mt-4 animate-fade-in">
+                                <div className="inline-flex items-center gap-2 bg-gray-100 dark:bg-slate-800 px-4 py-2 rounded-full">
                                     <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                                     <p className="font-medium">You've seen all {loadedCount} hotels</p>
                                 </div>

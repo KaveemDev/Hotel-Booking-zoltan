@@ -98,10 +98,19 @@ const GlobeAnimation = () => {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     let lastTime = performance.now();
+    // Size cached here instead of measuring the layout every frame
+    let size = { w: 0, h: 0 };
+    let onScreen = true;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      // Skip the intro and show the finished map as a still image
+      Object.assign(stateRef.current, { phase: 'map', morphProgress: 1, mapOpacity: 1, time: 0 });
+    }
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.parentElement.getBoundingClientRect();
+      size = { w: rect.width, h: rect.height };
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       canvas.style.width = rect.width + 'px';
@@ -244,8 +253,8 @@ const GlobeAnimation = () => {
         ctx.stroke();
       }
 
-      // Cities
-      const time = stateRef.current.time;
+      // Cities (labels only on wider screens; on phones they ran into the hero text)
+      const showLabels = w >= 640;
       CITIES.forEach(([lon, lat, name, importance], i) => {
         const [x, y] = lonLatToMap(lon, lat, w, h);
         const pulse = Math.sin(stateRef.current.cityPulses[i]) * 0.4 + 0.6;
@@ -267,7 +276,7 @@ const GlobeAnimation = () => {
         ctx.fill();
 
         // City name for important cities
-        if (importance >= 0.8) {
+        if (showLabels && importance >= 0.8) {
           ctx.font = '10px Inter, sans-serif';
           ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + 0.2 * pulse})`;
           ctx.textAlign = 'center';
@@ -342,9 +351,7 @@ const GlobeAnimation = () => {
       const dt = Math.min((timestamp - lastTime) / 1000, 0.05); // cap delta
       lastTime = timestamp;
 
-      const rect = canvas.parentElement.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
+      const { w, h } = size;
       const st = stateRef.current;
 
       st.time += dt;
@@ -443,13 +450,36 @@ const GlobeAnimation = () => {
       // Particles always
       drawParticles(w, h);
 
+      animRef.current = null;
+      if (!reduceMotion && onScreen && !document.hidden) {
+        animRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    const start = () => {
+      if (animRef.current || !onScreen || document.hidden) return;
+      lastTime = performance.now();
       animRef.current = requestAnimationFrame(animate);
     };
 
-    animRef.current = requestAnimationFrame(animate);
+    // Stop drawing while the hero is scrolled away or the tab is in the background
+    const observer = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting;
+      start();
+    });
+    observer.observe(canvas);
+    document.addEventListener('visibilitychange', start);
+    // Resizing clears the canvas; repaints the still frame when motion is reduced
+    window.addEventListener('resize', start);
+
+    start();
 
     return () => {
       cancelAnimationFrame(animRef.current);
+      animRef.current = null;
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', start);
+      window.removeEventListener('resize', start);
       window.removeEventListener('resize', resize);
     };
   }, [lonLatToMap, lonLatToGlobe]);

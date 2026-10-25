@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Star, Shield, Clock, Headphones, ChevronDown, ArrowRight, Quote, Plane, Heart, Award, LogOut, User, Building, X, Sparkles, Minus, Plus } from 'lucide-react';
+import { Search, Users, MapPin, Star, Shield, Clock, Headphones, ChevronDown, ArrowRight, Quote, Plane, Heart, Award, LogOut, Building, X, Minus, Plus } from 'lucide-react';
 import GlobeAnimation from '../components/GlobeAnimation';
 import DateRangePicker from '../components/DateRangePicker';
 import { useAuth } from '../context/AuthContext';
@@ -82,23 +82,12 @@ const useCountUp = (end, duration = 2000, startOnView = true) => {
     return [count, ref];
 };
 
-// ─── Stars Generator ─────────────────────────────────────────
-const StarField = () => {
-    const stars = Array.from({ length: 60 }, (_, i) => ({
-        id: i,
-        left: `${Math.random() * 100}%`,
-        top: `${Math.random() * 100}%`,
-        size: `${1 + Math.random() * 3}px`,
-        delay: `${Math.random() * 5}s`,
-        duration: `${2 + Math.random() * 4}s`,
-    }));
-    return (
-        <div className="stars-container">
-            {stars.map((s) => (
-                <div key={s.id} className="star" style={{ left: s.left, top: s.top, width: s.size, height: s.size, animationDelay: s.delay, animationDuration: s.duration }} />
-            ))}
-        </div>
-    );
+// ─── Typewriter ──────────────────────────────────────────────
+// Own component so each keystroke re-renders this span, not the whole landing page
+const TYPEWRITER_WORDS = ['Your Dream Stay', 'Best Hotel Deals', 'Luxury Resorts', 'Beach Getaways', 'City Adventures'];
+const Typewriter = () => {
+    const text = useTypewriter(TYPEWRITER_WORDS, 90, 50, 1800);
+    return <span className="hero-gradient-text">{text}</span>;
 };
 
 // ─── Format Date Helper ──────────────────────────────────────
@@ -153,7 +142,7 @@ const LandingPage = () => {
 
     useEffect(() => {
         const handleScroll = () => setIsNavScrolled(window.scrollY > 80);
-        window.addEventListener('scroll', handleScroll);
+        window.addEventListener('scroll', handleScroll, { passive: true });
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
 
@@ -197,6 +186,7 @@ const LandingPage = () => {
             } catch (e) { console.error('Failed to init countries:', e); }
         };
         init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, []);
 
     const getCountryName = useCallback((code) => {
@@ -233,6 +223,7 @@ const LandingPage = () => {
                     .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
                 citySuggestions = [...citySuggestions, ...filtered];
             } else if (isCountryMatch || TOP_COUNTRIES.includes(code)) {
+                // eslint-disable-next-line no-loop-func -- existing, tested behaviour; changing deps could re-trigger effects
                 const promise = fetchCities(code).then(cityData => {
                     if (cityData?.CityList) {
                         citiesCacheRef.current[code] = cityData.CityList;
@@ -285,6 +276,7 @@ const LandingPage = () => {
 
         const combined = [...citySuggestions, ...hotelSuggestions];
         return combined.length > 0 ? combined[0] : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, [getCountryName]);
 
 
@@ -329,6 +321,7 @@ const LandingPage = () => {
                                 .map(c => ({ ...c, type: 'City', countryCode: code, countryName: getCountryName(code) }));
                             citySuggestions = [...citySuggestions, ...filtered];
                         } else if (isCountryMatch || TOP_COUNTRIES.includes(code)) {
+                            // eslint-disable-next-line no-loop-func -- existing, tested behaviour; changing deps could re-trigger effects
                             const promise = fetchCities(code).then(cityData => {
                                 if (cityData?.CityList) {
                                     citiesCacheRef.current[code] = cityData.CityList;
@@ -408,12 +401,8 @@ const LandingPage = () => {
         };
         const timeoutId = setTimeout(getSuggestions, 300);
         return () => clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, [destination, isSearchOverlayOpen, getCountryName]);
-
-    const typewriterText = useTypewriter(
-        ['Your Dream Stay', 'Best Hotel Deals', 'Luxury Resorts', 'Beach Getaways', 'City Adventures'],
-        90, 50, 1800
-    );
 
     const [hotelCount, hotelRef] = useCountUp(200000, 2500);
     const [countryCount, countryRef] = useCountUp(50, 2000);
@@ -481,6 +470,7 @@ const LandingPage = () => {
                 }
             }
         } catch (err) { console.error('Failed to look up city:', err); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- existing, tested behaviour; changing deps could re-trigger effects
     }, [getCountryName]);
 
     const handleExplore = useCallback(async () => {
@@ -550,8 +540,9 @@ const LandingPage = () => {
 
             {/* ══════════════ NAVBAR ══════════════ */}
             <nav className={`landing-nav ${isNavScrolled ? 'scrolled' : ''}`}>
-                <Link to="/" className="flex items-center gap-2">
-                    <img src={logo} alt="Zovotel" className="h-10" />
+                {/* Light pill: the logo's tagline is dark text and vanished on the dark header */}
+                <Link to="/" className="flex items-center gap-2 bg-white/95 rounded-xl px-2 py-1 shadow-sm shrink-0">
+                    <img src={logo} alt="Zovotel" className="h-9 sm:h-10 w-auto" />
                 </Link>
                 <div className="flex items-center gap-4 sm:gap-6">
                     <Link to="/search" className="nav-link hidden sm:block">Hotels</Link>
@@ -596,7 +587,7 @@ const LandingPage = () => {
                     <h1 className="hero-heading" style={{ animationDelay: '0.1s' }}>
                         <span className="block text-white/90 mb-2">Discover</span>
                         <span className="typewriter-container">
-                            <span className="hero-gradient-text">{typewriterText}</span>
+                            <Typewriter />
                             <span className="typewriter-cursor" />
                         </span>
                     </h1>

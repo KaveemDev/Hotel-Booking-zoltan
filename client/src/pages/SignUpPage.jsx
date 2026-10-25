@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Mail, Lock, User, Phone, Eye, EyeOff, AlertCircle, Check, Gift, Tag, Shield, Sparkles, Globe, Award } from 'lucide-react';
+import { Mail, Lock, User, Phone, Eye, EyeOff, AlertCircle, Check, Gift, Tag, Award } from 'lucide-react';
 import '../styles/Auth.css';
 import logo from '../assets/logo.png';
 
